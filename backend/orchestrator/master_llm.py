@@ -19,7 +19,7 @@ from actions.extractor import ActionExtractor, scan_for_injection
 from actions.gmail_client import GmailClient
 from actions.whatsapp_client import WhatsAppClient
 from actions.telegram_client import TelegramClient
-from actions.workspace import WorkspaceAgent
+from actions.workspace import WorkspaceAgent, resolve_existing_target
 
 logger = logging.getLogger(__name__)
 
@@ -363,10 +363,33 @@ Rewritten:"""
             coding_choice = "claude" if self.generator.llm.claude_client else model_choice
             yield emit(label, "Processing", f"Writing the file with {self.generator.llm.get_active_model_name(coding_choice)} (confined to praxis-workspace/)")
             try:
-                payload = await asyncio.to_thread(self.extractor.extract_file_task, query, coding_choice)
+                # Show the model what is already in the workspace, so "the txt folder"
+                # resolves to the real txt/name.txt instead of a newly invented
+                # txt/names.txt sitting beside it.
+                existing_files = await asyncio.to_thread(self.workspace.list_files)
+                payload = await asyncio.to_thread(
+                    self.extractor.extract_file_task, query, coding_choice, existing_files
+                )
                 # Validate the path stays inside the workspace up-front, so a bad path is
                 # caught now rather than at approval time.
-                self.workspace._safe_path(payload["path"])
+                payload["path"] = self.workspace.rel(self.workspace._safe_path(payload["path"]))
+                # The model names files unreliably; if the user is clearly editing, map
+                # its guess onto the file that actually exists (name.txt vs names.txt).
+                payload["path"] = resolve_existing_target(payload["path"], existing_files, query)
+
+                # If the file already exists, this is an EDIT: re-run against its current
+                # contents so an instruction like "remove the old names" actually removes
+                # them, instead of overwriting the file with freshly invented content.
+                if self.workspace.exists(payload["path"]):
+                    current = await asyncio.to_thread(self.workspace.read_file, payload["path"])
+                    yield emit(label, "Processing", f"{payload['path']} exists — editing it rather than replacing it")
+                    payload["content"] = await asyncio.to_thread(
+                        self.extractor.revise_file_content, query, payload["path"], current, coding_choice
+                    )
+                    payload["mode"] = "edit"
+                    payload["previous_content"] = current
+                else:
+                    payload["mode"] = "create"
             except ValueError as e:
                 self.actions.audit_blocked(str(e), "file", {"raw_query": query}, query)
                 yield emit(label, "Completed", "Blocked: path escapes the workspace")
@@ -383,9 +406,14 @@ Rewritten:"""
                 return
 
             draft = self.actions.create_draft("file", payload, query)
-            yield emit(label, "Completed", f"Draft ready: {payload['path']} — awaiting your approval")
+            is_edit = payload.get("mode") == "edit"
+            verb = "Edited" if is_edit else "Draft ready"
+            yield emit(label, "Completed", f"{verb}: {payload['path']} — awaiting your approval")
             yield emit("Final Response", "Completed", "Awaiting approval", {
-                "answer": f"I've drafted **{payload['path']}**. Nothing has been written yet — "
+                "answer": (f"I've drafted an edit to **{payload['path']}**, replacing its current contents. "
+                           if is_edit else
+                           f"I've drafted **{payload['path']}**. ")
+                          + "Nothing has been written yet — "
                           f"review it and press Approve to save it to your workspace, or Reject to discard.",
                 "sources": [],
                 "pending_action": draft,
