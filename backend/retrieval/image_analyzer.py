@@ -16,6 +16,8 @@ class ImageAnalyzer:
     then falls back to Gemini Vision if available.
     """
 
+    OCR_RETRY_COOLDOWN_S = 600.0
+
     def __init__(self):
         self.llm = DualLLM()
         self.ocr_reader = None
@@ -47,15 +49,31 @@ class ImageAnalyzer:
             return image_bytes
 
     def _get_ocr_reader(self):
-        if self.ocr_reader is None:
-            try:
-                import easyocr
-                logger.info("Initializing EasyOCR reader...")
-                self.ocr_reader = easyocr.Reader(['en'], gpu=True)
-            except ImportError:
-                logger.warning("easyocr not installed, OCR will be skipped")
-                self.ocr_reader = "disabled"
-        return self.ocr_reader if self.ocr_reader != "disabled" else None
+        """
+        Lazily build the OCR reader. OCR is an enhancement (it feeds recognised text
+        to the vision prompt), not a requirement: if easyocr is missing, or its model
+        download fails (it fetches weights from GitHub release assets on first use,
+        which intermittently return 504), skip OCR rather than abort the whole image
+        analysis. A failure is remembered for a cooldown so we do not re-attempt a
+        100 MB download on every request.
+        """
+        import time
+        if self.ocr_reader is not None:
+            return self.ocr_reader or None
+        if getattr(self, "_ocr_failed_at", 0.0) and time.monotonic() - self._ocr_failed_at < self.OCR_RETRY_COOLDOWN_S:
+            return None
+        try:
+            import easyocr
+            self.ocr_reader = easyocr.Reader(['en'], gpu=True)
+            logger.info("EasyOCR reader initialised.")
+        except ImportError:
+            logger.warning("easyocr not installed, OCR will be skipped")
+            self.ocr_reader = False
+        except Exception as e:
+            logger.warning(f"OCR unavailable ({type(e).__name__}: {str(e)[:120]}); continuing without OCR text.")
+            self._ocr_failed_at = time.monotonic()
+            return None
+        return self.ocr_reader or None
 
     async def analyze(self, image_paths: list[str], query: str = "") -> str:
         """

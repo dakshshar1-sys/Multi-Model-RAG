@@ -1,0 +1,23 @@
+# SearXNG for the RAG's web-search tier. Minimal: inherit every default, enable the
+# JSON API the backend calls, and disable the built-in bot limiter (only the backend
+# talks to it, on the compose network).
+use_default_settings: true
+server:
+  secret_key: "ultrasecretkey"  # overridden by SEARXNG_SECRET from .env; never commit a real key
+  limiter: false
+  image_proxy: false
+search:
+  formats:
+    - html
+    - json
+  safe_search: 0
+  autocomplete: ""
+# Wider recall than the defaults (which leave these off). Any one of them being
+# rate-limited just shows as "unresponsive" in the JSON and the rest still answer.
+engines:
+  - name: google
+    disabled: false
+  - name: bing
+    disabled: false
+  - name: qwant
+    disabled: false

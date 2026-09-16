@@ -40,7 +40,12 @@ class DualLLM:
 
         # Initialize Llama (Always available as fallback)
         base_url = os.getenv("OLLAMA_HOST", "http://localhost:11434")
-        self.llama_llm = Ollama(model=self.llama_model, base_url=base_url)
+        # Ollama's server default window is 4096 tokens and it truncates longer prompts
+        # from the FRONT — silently dropping the retrieved sources while keeping the
+        # question. qwen2.5:3b supports 32k; 8192 fits the search context with ~150 MB
+        # of extra KV cache. Override with OLLAMA_NUM_CTX if VRAM is tight.
+        num_ctx = int(os.getenv("OLLAMA_NUM_CTX", "8192"))
+        self.llama_llm = Ollama(model=self.llama_model, base_url=base_url, num_ctx=num_ctx)
 
         # Initialize Gemini if key exists and is not a placeholder
         self.gemini_llm = None

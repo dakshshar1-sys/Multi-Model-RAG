@@ -9,7 +9,7 @@ from retrieval.reranker import RerankerModel
 from models.generation import GenerationModel
 from verification.verifier import VerificationModule
 from retrieval.visualizer import VisualizerAgent
-from retrieval.web_search import search_web
+from retrieval.web_search import search_web, parse_query_list, build_search_queries, merge_search_results, series_from_context, search_is_degraded
 from core.memory_manager import NotebookMemory
 from core.persona_memory import AgentPersonaMemory
 from utils.cache import ResponseCache
@@ -22,6 +22,58 @@ from actions.telegram_client import TelegramClient
 from actions.workspace import WorkspaceAgent
 
 logger = logging.getLogger(__name__)
+
+_CLARIFY_RE = re.compile(
+    r"(would you like|could you (?:please )?(?:provide|clarify|specify)|can you (?:please )?(?:provide|clarify|specify)"
+    r"|please (?:provide|specify|clarify)|let me know|additional details|more context|if available)",
+    re.I,
+)
+
+
+_IMAGE_NOUN_RE = re.compile(
+    r"\b(image|images|photo|photos|picture|pictures|screenshot|screenshots|pic|pics)\b"
+    r"|\bthe (upload|attachment)\b|\battached (image|photo|picture|screenshot|file)\b",
+    re.I,
+)
+_PRONOUN_FOLLOWUP_RE = re.compile(r"\b(it|this|that|these|those)\b", re.I)
+IMAGE_CONTEXT_TTL_S = 600.0
+
+
+def refers_to_previous_image(query: str, max_pronoun_words: int = 6) -> bool:
+    """
+    Does a query that carries no new image refer back to the last uploaded one?
+    Only an explicit visual noun, or a short pronoun-only follow-up ("what's in
+    it?", "describe this"), counts. The previous substring check on "the"/"it"
+    matched "there" and "with", so after any upload every later query — greetings,
+    knowledge-base questions — was answered from the stale image and never reached
+    the router. "chart" and "uploaded" deliberately do not count: "chart X by
+    quarter" and "my uploaded documents" are not about a picture.
+    """
+    q = (query or "").strip()
+    if not q:
+        return False
+    if _IMAGE_NOUN_RE.search(q):
+        return True
+    return len(q.split()) <= max_pronoun_words and bool(_PRONOUN_FOLLOWUP_RE.search(q))
+
+
+def looks_like_clarification(rewritten: str, original: str) -> bool:
+    """
+    The history-rewriter is asked to restate the user's question self-contained.
+    A small model sometimes *answers* instead — "What chart would you like to see
+    of Samsung's revenue?" — and that text then drives routing, search and the
+    "Contextualized query" shown in the UI. Detect it so the original words are used.
+    """
+    r = (rewritten or "").strip()
+    if not r:
+        return True
+    if _CLARIFY_RE.search(r):
+        return True
+    o = (original or "").strip()
+    if r.endswith("?") and not o.endswith("?") and r.lower().startswith(("what ", "which ", "could ", "would ", "can ", "do you", "are you")):
+        return True
+    return False
+
 
 class MasterOrchestrator:
     """
@@ -114,6 +166,10 @@ Rewritten:"""
                     return
                 search_query = clean_query
 
+            if looks_like_clarification(search_query, query):
+                logger.info(f"Rewriter returned a clarification instead of a rewrite; using the original query. Got: {search_query[:90]!r}")
+                search_query = query
+
             yield emit("Master LLM Orchestrator", "Completed", f"Contextualized query: {search_query}")
         else:
             yield emit("Master LLM Orchestrator", "Completed", "Delegating task to Agent Router")
@@ -122,13 +178,18 @@ Rewritten:"""
         # When an image is uploaded, check if the query is primarily about the image.
         # If so, bypass the KB/Web search and answer directly from the image analysis.
         
-        # Update or reuse image context
+        # Update or reuse image context. Reuse only for an explicit follow-up about the
+        # picture, and only for a while: a stale image must not hijack the next
+        # unrelated question (see refers_to_previous_image).
+        import time as _time
         if image_context:
             self.last_image_context = image_context
-        elif not image_context and self.last_image_context:
-            # Check if this query refers to the previous image
-            image_ref_keywords = ["this", "that", "the", "it", "photo", "image", "picture", "screenshot"]
-            if any(kw in query.lower() for kw in image_ref_keywords):
+            self.last_image_context_at = _time.monotonic()
+        elif self.last_image_context:
+            if _time.monotonic() - getattr(self, "last_image_context_at", 0.0) > IMAGE_CONTEXT_TTL_S:
+                logger.info("Previous image context expired; dropping it.")
+                self.last_image_context = None
+            elif refers_to_previous_image(query):
                 logger.info("Reusing previous image context for follow-up query.")
                 image_context = self.last_image_context
 
@@ -209,7 +270,10 @@ Rewritten:"""
         try:
             from models.agentic_router import AgentRouter
             router = AgentRouter()
-            tool = await asyncio.to_thread(router.route_query, search_query, model_choice)
+            # Pass the RAW user words too: the deterministic fast-path keys off the user's
+            # literal request ("make a folder ... rng.py"), never the history-rewritten
+            # query, so a file task can't be biased into a message by prior chat context.
+            tool = await asyncio.to_thread(router.route_query, search_query, model_choice, query)
             yield emit("Agent Router", "Completed", f"Selected Tool: [{tool}]")
         except Exception as e:
             logger.error(f"Agent Router exception: {e}")
@@ -532,26 +596,35 @@ Rewritten:"""
                 expansion_prompt = f"Generate 3 diverse search queries to thoroughly answer this request: '{search_query}'. Return ONLY a JSON list of strings."
                 try:
                     exp_raw = self.generator.llm.invoke(expansion_prompt, model_choice=model_choice).strip()
-                    exp_json = re.sub(r'```json\s*|\s*```', '', exp_raw)
-                    queries = json.loads(exp_json)
-                    yield emit("Agent Router", "Completed", f"Expanded to {len(queries)} research paths")
-                except:
-                    logger.warning("Query expansion failed, using original query.")
-                    queries = [search_query]
+                    expansions = parse_query_list(exp_raw)
+                except Exception as e:
+                    logger.warning(f"Query expansion failed ({e}); using the base queries only.")
+                    expansions = []
+
+                # The user's literal words are always searched first (see build_search_queries):
+                # the history-rewrite can turn a request into a question aimed at the user,
+                # which every engine answers with nothing. The rewritten form runs second so
+                # follow-ups keep their context.
+                queries = build_search_queries(query, search_query, expansions)
+                yield emit("Agent Router", "Completed", f"Expanded to {len(queries)} research paths")
                 
                 # OPTIMIZATION: Perform searches in parallel using asyncio.gather for 3x speedup
                 # This is Phase 1 optimization - executes all web searches simultaneously
                 tasks = [search_web(q, max_results=3) for q in queries]
                 search_results = await asyncio.gather(*tasks)
                 
-                all_docs = []
-                all_sources = []
-                for doc_texts, sources in search_results:
-                    all_docs.extend(doc_texts)
-                    all_sources.extend(sources)
+                # De-duplicate across the parallel searches (the same page surfaces for
+                # every query variant) and cap the total so it fits the model's context
+                # window rather than being truncated from the front by the runtime.
+                doc_texts, sources = merge_search_results(search_results)
 
-                doc_texts = all_docs
-                sources = all_sources
+                # If the primary engine rate-limited us mid-request, what follows is
+                # headlines and encyclopedia entries, not a web search. Say so, and
+                # do not let it be cached as if it were the real answer.
+                search_degraded = search_is_degraded()
+                if search_degraded:
+                    yield emit("Web Search", "Completed",
+                               "Primary search engine is rate-limiting this address — results below are from fallback sources (news headlines, Wikipedia)")
 
                 if doc_texts:
                     yield emit("Web Search", "Completed", f"Retrieved {len(doc_texts)} live web results across all paths")
@@ -600,11 +673,24 @@ Rewritten:"""
                 if has_rich_data:
                     viz_context = [f"[User Provided Data]:\n{query}"]
 
+                # A "by quarter / by half" request: take the series straight from the
+                # annotated source tables and draw it with the fixed renderer. The local
+                # model cannot be trusted to transcribe multi-source financial tables
+                # (it hands full-year totals to quarters), so the chart's numbers must
+                # come from the filings, not from the prose.
+                series = series_from_context(doc_texts, query)
+                if series:
+                    yield emit("Visualizer Agent", "Completed", f"Series taken from source tables: {len(series['points'])} periods")
+
                 while retry_count <= max_retries and not is_valid:
                     yield emit("Verification & Visualization", "Processing", "Running fact-check and chart generation concurrently...")
                     
                     async def safe_visualize():
                         try:
+                            if series:
+                                return await asyncio.to_thread(
+                                    self.visualizer.render_data_chart, series["points"], series["title"], series["kind"]
+                                )
                             return await self.visualizer.run(viz_context, answer, model_choice=model_choice)
                         except Exception as e:
                             logger.error(f"Visualizer failed: {e}")
@@ -636,6 +722,15 @@ Rewritten:"""
                             chart_filename = current_chart_filename
                             break
 
+                if search_degraded:
+                    warning = ("Live web search was rate-limited during this request, so this answer was built from "
+                               "news headlines and Wikipedia only. Retry in a while for a full search.")
+
+                # The chart above is drawn from the filings; make the prose carry the same
+                # figures so a reader never has to reconcile the two.
+                if series:
+                    answer = answer.rstrip() + "\n\n**Figures from the source tables**\n\n" + series["table"]
+
                 # Build source map for inline citations
                 source_map = {str(i+1): src for i, src in enumerate(sources)}
                 final_details = {"answer": answer, "sources": sources, "source_map": source_map}
@@ -647,7 +742,10 @@ Rewritten:"""
                 # Save metadata to the analytical notebook
                 self.notebook.save_entry(query, answer, sources)
 
-                self.cache.set(query, history, image_context, final_details)
+                # Cache only what deserves to be served again for an hour: a full search
+                # (not the fallback tier) whose answer passed the factuality check.
+                if not search_degraded and is_valid:
+                    self.cache.set(query, history, image_context, final_details)
                 yield emit("Final Response", "Completed", "Pipeline finished", final_details)
                 return
 

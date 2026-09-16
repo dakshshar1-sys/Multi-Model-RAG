@@ -110,12 +110,14 @@ The user has asked you to create/write a file, and may have described a problem 
 Produce the complete file. If they described a task, fully solve it in correct, working code.
 
 Output EXACTLY this format and nothing else:
-FILENAME: <relative filename with extension, e.g. solve.py or src/app.js>
+FILENAME: <relative path with extension, e.g. solve.py or src/app.js>
 CONTENT:
 <the complete raw file body>
 
 Rules:
 - FILENAME is a plain relative path (no leading slash, no ".."). If the user gave a name, use it; otherwise pick a sensible one.
+- IF the user asks for the file to be INSIDE a folder (e.g. "make a folder named pythoncode and in it a file random.py"), put the folder in the path: FILENAME: pythoncode/random.py. The folder is created automatically. Support nested folders too (e.g. a/b/c.py).
+- Write COMPLETE, RUNNABLE code. If it's a script, make it actually do the thing when run — e.g. under `if __name__ == "__main__":` call the function and print the result, so running the file produces visible output.
 - CONTENT is the raw file content only. Do NOT wrap it in markdown fences. Do NOT add any explanation before or after.
 
 User instruction: "{query}"

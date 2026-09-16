@@ -1,8 +1,25 @@
 import logging
+import re
 from core.llm_provider import DualLLM
 from langchain_core.prompts import PromptTemplate
 
 logger = logging.getLogger(__name__)
+
+# ── Deterministic pre-routing ────────────────────────────────────────────────
+# The 3B local model is a probabilistic classifier: with a long chat history it
+# occasionally misroutes an unmistakable "make a file/folder" request to a
+# messaging tool. For the clearest cases we decide with regex BEFORE the LLM, so
+# a file request can never turn into a WhatsApp/Telegram/email draft.
+_FILE_EXT_RE = re.compile(
+    r"\b[\w-]+\.(py|js|ts|jsx|tsx|html?|css|json|txt|md|sh|bash|java|cpp|cc|c|h|go|"
+    r"rs|rb|php|sql|ya?ml|xml|csv|ipynb|toml|ini|env|dockerfile)\b",
+    re.I,
+)
+_FILE_NOUN_RE = re.compile(r"\b(folder|directory|sub-?folder|script|program)\b", re.I)
+_CREATE_RE = re.compile(r"\b(make|create|write|generate|build|save|scaffold|code up)\b", re.I)
+# If any of these appear, we do NOT force Workspace_Task — let the LLM decide, so a
+# genuine "email Ali the config.py" isn't hijacked into writing a file.
+_SEND_RE = re.compile(r"\b(e-?mail|mail|whats-?app|telegram|text|message|dm|send)\b", re.I)
 
 class AgentRouter:
     """
@@ -39,11 +56,33 @@ Analyze the query and respond with EXACTLY ONE tool name from the list above. Do
 Tool Selection:'''
         )
         
-    def route_query(self, query: str, model_choice: str = "auto") -> str:
+    @staticmethod
+    def _fast_route(query: str) -> str | None:
+        """High-precision keyword rule for the clearest intents. Returns a tool or None."""
+        if _SEND_RE.search(query):
+            return None  # any messaging cue -> let the LLM judge, don't force a file write
+        mentions_file = bool(_FILE_EXT_RE.search(query)) or bool(_FILE_NOUN_RE.search(query))
+        if mentions_file and _CREATE_RE.search(query):
+            return "Workspace_Task"
+        return None
+
+    def route_query(self, query: str, model_choice: str = "auto", raw_query: str = None) -> str:
         """
         Takes a query and returns the name of the tool to use.
         Ensures the output matches exactly one of the known tools.
+
+        `raw_query` is the user's original words (before history-rewriting); the
+        deterministic fast-path prefers it so prior chat context can never bias an
+        unmistakable file request into a message.
         """
+        # Deterministic fast-path: an unmistakable file/folder creation request goes
+        # straight to Workspace_Task, bypassing the flaky LLM classifier. Check the raw
+        # words first, then the (possibly rewritten) query.
+        forced = self._fast_route(raw_query or query) or self._fast_route(query)
+        if forced:
+            logger.info(f"Router fast-path matched -> {forced}")
+            return forced
+
         try:
             prompt = self.prompt_template.format(query=query)
             response = self.llm.invoke(prompt, model_choice=model_choice).strip()
