@@ -10,6 +10,7 @@ langchain-text-splitters==0.0.1
 faiss-cpu==1.8.0
 python-dotenv==1.0.1
 pypdf==4.1.0
+pypdfium2==5.13.0   # renders PDF pages for OCR of scanned documents (self-contained, no apt)
 beautifulsoup4==4.12.3
 requests==2.31.0
 duckduckgo-search==6.3.7

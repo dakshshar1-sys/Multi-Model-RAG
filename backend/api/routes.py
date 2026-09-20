@@ -54,10 +54,43 @@ async def ingest_document(file: UploadFile = File(...)):
     documents = await doc_parser.parse_upload_file(file)
     for doc in documents:
         doc.metadata["source"] = file.filename
-        
+
+    # Re-uploading a file replaces its previous chunks (otherwise a fixed extraction
+    # would sit in the index next to the old garbage).
+    replaced = orchestrator.vector_db.delete_by_source(file.filename)
     orchestrator.vector_db.add_documents(documents)
-    
-    return {"filename": file.filename, "status": "Ingested successfully", "chunks": len(documents)}
+
+    out = {"filename": file.filename, "status": "Ingested successfully", "chunks": len(documents),
+           "replaced_chunks": replaced}
+    report = getattr(doc_parser, "last_report", None)
+    if report is not None:
+        out["extraction"] = report.as_dict()
+    return out
+
+@router.get("/documents")
+def list_documents():
+    """Sources currently in the knowledge base, with chunk counts and how they were extracted."""
+    vs = orchestrator.vector_db.vector_store
+    counts: dict[str, dict] = {}
+    if vs:
+        for doc_id in vs.index_to_docstore_id.values():
+            meta = (vs.docstore.search(doc_id).metadata or {})
+            src = meta.get("source") or "?"
+            entry = counts.setdefault(src, {"chunks": 0, "ocr_chunks": 0})
+            entry["chunks"] += 1
+            if meta.get("extraction") == "ocr":
+                entry["ocr_chunks"] += 1
+    return {"documents": [{"source": k, **v} for k, v in sorted(counts.items())]}
+
+
+@router.delete("/documents/{source}")
+def delete_document(source: str):
+    """Remove every chunk of one source from the knowledge base."""
+    removed = orchestrator.vector_db.delete_by_source(source)
+    if removed == 0:
+        raise HTTPException(status_code=404, detail=f"No chunks found for source '{source}'")
+    return {"source": source, "removed_chunks": removed}
+
 
 @router.post("/crawl")
 async def crawl_website(request: CrawlRequest):

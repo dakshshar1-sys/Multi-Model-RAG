@@ -57,6 +57,23 @@ class VectorDatabase:
             logger.error(f"Failed to add documents: {e}")
             raise
 
+    def delete_by_source(self, source: str) -> int:
+        """
+        Remove every chunk whose metadata.source equals `source`. Re-ingesting a file
+        (e.g. after fixing its extraction) must replace its old chunks, or the garbage
+        keeps competing with the good text at retrieval time. Returns chunks removed.
+        """
+        if not self.vector_store or not source:
+            return 0
+        ids = [doc_id for doc_id in self.vector_store.index_to_docstore_id.values()
+               if (self.vector_store.docstore.search(doc_id).metadata or {}).get("source") == source]
+        if not ids:
+            return 0
+        self.vector_store.delete(ids)
+        self.save_index()
+        logger.info(f"Deleted {len(ids)} chunks for source '{source}'.")
+        return len(ids)
+
     def retrieve(self, query: str, top_k: int = 5) -> list[Document]:
         """
         Retrieve top_k documents based on vector similarity.
