@@ -1,0 +1,32 @@
+{"id": "r01", "query": "make a folder named pythoncode and in that folder make a python file named rng.py that prints a random number", "expected": "Workspace_Task", "tag": "file-create"}
+{"id": "r02", "query": "write a script that reverses a string and save it as reverse.py", "expected": "Workspace_Task", "tag": "file-create"}
+{"id": "r03", "query": "create index.html with a hello world page", "expected": "Workspace_Task", "tag": "file-create"}
+{"id": "r04", "query": "solve fizzbuzz and save the solution as fizz.py", "expected": "Workspace_Task", "tag": "file-create"}
+{"id": "r05", "query": "go to the folder txt and add the names james and jane there, removing the older names", "expected": "Workspace_Task", "tag": "file-edit"}
+{"id": "r06", "query": "email Ali about the meeting tomorrow at 10", "expected": "Send_Email", "tag": "send"}
+{"id": "r07", "query": "send a mail to my supervisor saying the draft is ready", "expected": "Send_Email", "tag": "send"}
+{"id": "r08", "query": "email Ali the config.py settings we discussed", "expected": "Send_Email", "tag": "send-mentions-file"}
+{"id": "r09", "query": "message Ishan that the router fix is deployed", "expected": "Send_Telegram", "tag": "send"}
+{"id": "r10", "query": "telegram Ali the meeting notes", "expected": "Send_Telegram", "tag": "send"}
+{"id": "r11", "query": "text mom that I'll be late", "expected": "Send_Telegram", "tag": "send"}
+{"id": "r12", "query": "whatsapp Ali that the build passed", "expected": "Send_Telegram", "tag": "send-whatsapp-alias"}
+{"id": "r13", "query": "any unread emails from today?", "expected": "Read_Email", "tag": "inbox"}
+{"id": "r14", "query": "summarize my inbox", "expected": "Read_Email", "tag": "inbox"}
+{"id": "r15", "query": "what did my supervisor email me about the deadline?", "expected": "Read_Email", "tag": "inbox"}
+{"id": "r16", "query": "make a bar chart: Jan 100, Feb 75, Mar 50", "expected": "Visualize_Data", "tag": "chart-inline"}
+{"id": "r17", "query": "plot these numbers: 4, 8, 15, 16, 23, 42", "expected": "Visualize_Data", "tag": "chart-inline"}
+{"id": "r18", "query": "chart the sales figures I just gave you: north 120, south 90, east 45", "expected": "Visualize_Data", "tag": "chart-inline"}
+{"id": "r19", "query": "chart Samsung's 2025 revenue by quarter", "expected": "Web_Search", "tag": "chart-needs-lookup", "accept": ["Visualize_Data"], "note": "the orchestrator's no-numbers guard redirects Visualize_Data to Web_Search, so either is correct end to end"}
+{"id": "r20", "query": "what is the current status of shipping through the Strait of Hormuz?", "expected": "Web_Search", "tag": "live"}
+{"id": "r21", "query": "who won the last Formula 1 race?", "expected": "Web_Search", "tag": "live"}
+{"id": "r22", "query": "what is the population of Bengaluru?", "expected": "Web_Search", "tag": "world-knowledge"}
+{"id": "r23", "query": "what do my uploaded notes say about ensemble methods?", "expected": "Search_Knowledge_Base", "tag": "kb"}
+{"id": "r24", "query": "search my uploaded documents for the fee structure", "expected": "Search_Knowledge_Base", "tag": "kb"}
+{"id": "r25", "query": "according to the report I ingested, what are the retrieval-level errors?", "expected": "Search_Knowledge_Base", "tag": "kb"}
+{"id": "r26", "query": "what is in the image I uploaded?", "expected": "Vision_Analysis", "tag": "vision"}
+{"id": "r27", "query": "read the text in this screenshot", "expected": "Vision_Analysis", "tag": "vision"}
+{"id": "r28", "query": "hey, what can you do?", "expected": "Direct_Chat", "tag": "chat"}
+{"id": "r29", "query": "good morning!", "expected": "Direct_Chat", "tag": "chat"}
+{"id": "r30", "query": "AAPL", "expected": "Ambiguous_Query", "tag": "ambiguous"}
+{"id": "r31", "query": "the project", "expected": "Ambiguous_Query", "tag": "ambiguous"}
+{"id": "r32", "query": "apple", "expected": "Ambiguous_Query", "tag": "ambiguous"}
