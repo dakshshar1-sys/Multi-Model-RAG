@@ -509,6 +509,7 @@ export default function QueryPanel({ messages, setMessages, conversationId }: Qu
       formData.append("query", effectiveQuery);
       formData.append("history", formatHistory());
       formData.append("model_choice", modelChoice);
+      formData.append("conversation_id", conversationId ?? "");
       imageFiles.forEach((file) => {
         formData.append("images", file);
       });
@@ -563,7 +564,7 @@ export default function QueryPanel({ messages, setMessages, conversationId }: Qu
       // Text-only: use EventSource (GET). The `_` cache-buster guarantees the browser
       // never replays a previously cached stream for an identical query+history.
       const eventSource = new EventSource(
-        `${API_BASE}/api/stream?query=${encodeURIComponent(effectiveQuery)}&history=${encodeURIComponent(formatHistory())}&model_choice=${encodeURIComponent(modelChoice)}&_=${Date.now()}`
+        `${API_BASE}/api/stream?query=${encodeURIComponent(effectiveQuery)}&history=${encodeURIComponent(formatHistory())}&model_choice=${encodeURIComponent(modelChoice)}&conversation_id=${encodeURIComponent(conversationId ?? "")}&_=${Date.now()}`
       );
       eventSourceRef.current = eventSource;
 

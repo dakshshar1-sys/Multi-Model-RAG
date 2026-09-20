@@ -318,14 +318,14 @@ def workspace_files():
     return {"dir": orchestrator.workspace.workspace_dir, "files": orchestrator.workspace.list_files()}
 
 @router.get("/stream")
-async def pipeline_stream(query: str, history: str = "", model_choice: str = "auto", request: Request = None):
+async def pipeline_stream(query: str, history: str = "", model_choice: str = "auto", conversation_id: str = "", request: Request = None):
     """
     Server-Sent Events endpoint to stream pipeline status to the frontend.
     Text-only queries. Accepts model_choice: 'auto', 'local', or 'api'.
     """
     async def event_generator():
         try:
-            async for event in orchestrator.process_query_stream(query, history, model_choice=model_choice):
+            async for event in orchestrator.process_query_stream(query, history, model_choice=model_choice, conversation_id=conversation_id):
                 if request and await request.is_disconnected():
                     break
                 yield event
@@ -341,6 +341,7 @@ async def pipeline_stream_with_image(
     query: str = Form(...),
     history: str = Form(""),
     model_choice: str = Form("auto"),
+    conversation_id: str = Form(""),
     images: list[UploadFile] = File(default=[]),
 ):
     """
@@ -380,7 +381,7 @@ async def pipeline_stream_with_image(
                     "action": f"Extracted visual data from {len(img_paths)} uploaded image(s)"
                 })
             
-            async for event in orchestrator.process_query_stream(query, history, image_context=image_context, model_choice=model_choice):
+            async for event in orchestrator.process_query_stream(query, history, image_context=image_context, model_choice=model_choice, conversation_id=conversation_id):
                 if await request.is_disconnected():
                     break
                 yield event

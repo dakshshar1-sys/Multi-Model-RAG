@@ -21,6 +21,7 @@ from actions.gmail_client import GmailClient
 from actions.whatsapp_client import WhatsAppClient
 from actions.telegram_client import TelegramClient
 from actions.workspace import WorkspaceAgent, resolve_existing_target
+from core.conversation_state import ConversationStore
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +97,8 @@ class MasterOrchestrator:
         self.visualizer = VisualizerAgent(persona_memory=self.persona_memory)
         self.notebook = NotebookMemory()
         self.cache = ResponseCache()
-        self.last_image_context = "" # Persist last analyzed image context
+        # Per-conversation state (last uploaded image, ...). See core/conversation_state.py.
+        self.conversations = ConversationStore()
 
         # Outbound actions (email / WhatsApp). These are the only parts of the system
         # that can affect the outside world, so they never fire on their own: the agent
@@ -109,7 +111,8 @@ class MasterOrchestrator:
         self.telegram = TelegramClient()
         self.workspace = WorkspaceAgent()
 
-    async def process_query_stream(self, query: str, history: str = "", image_context: str = "", model_choice: str = "auto") -> AsyncGenerator[str, None]:
+    async def process_query_stream(self, query: str, history: str = "", image_context: str = "", model_choice: str = "auto",
+                                   conversation_id: str | None = None) -> AsyncGenerator[str, None]:
         """
         Executes the entire RAG pipeline and yields SSE JSON strings at each step.
         """
@@ -124,9 +127,10 @@ class MasterOrchestrator:
         yield emit("Master LLM Orchestrator", "Processing", f"Analyzing user intent via {active_model}")
         
         search_query = query
+        state = self.conversations.get(conversation_id)
         if history:
             vision_hint = ""
-            if self.last_image_context:
+            if state.last_image_context:
                 vision_hint = "NOTE: An image was previously uploaded and analyzed. If the user refers to 'it', 'this', 'the photo', or 'the image', they are talking about that visual content. DO NOT inject outside topics (like previous search results) into the rewritten question if the user is focused on the image."
 
             rewrite_prompt = f"""Given the conversation history: '{history}', rewrite the following user question to be completely self-contained. 
@@ -182,17 +186,15 @@ Rewritten:"""
         # Update or reuse image context. Reuse only for an explicit follow-up about the
         # picture, and only for a while: a stale image must not hijack the next
         # unrelated question (see refers_to_previous_image).
-        import time as _time
         if image_context:
-            self.last_image_context = image_context
-            self.last_image_context_at = _time.monotonic()
-        elif self.last_image_context:
-            if _time.monotonic() - getattr(self, "last_image_context_at", 0.0) > IMAGE_CONTEXT_TTL_S:
-                logger.info("Previous image context expired; dropping it.")
-                self.last_image_context = None
+            state.set_image(image_context)
+        elif state.last_image_context:
+            if state.image_age_s() > IMAGE_CONTEXT_TTL_S:
+                logger.info(f"[{state.conversation_id}] previous image context expired; dropping it.")
+                state.clear_image()
             elif refers_to_previous_image(query):
-                logger.info("Reusing previous image context for follow-up query.")
-                image_context = self.last_image_context
+                logger.info(f"[{state.conversation_id}] reusing previous image context for follow-up query.")
+                image_context = state.last_image_context
 
         # Check cache (after resolving potential image context)
         cached_response = self.cache.get(query, history, image_context)
