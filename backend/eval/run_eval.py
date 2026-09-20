@@ -105,17 +105,22 @@ def _eval_db():
     return VectorDatabase(index_path=INDEX)
 
 
-def eval_retrieval(top_k_initial: int, top_k_final: int, use_rerank: bool, limit: int | None) -> dict:
+def _retriever(db, mode: str):
+    return {"dense": db.retrieve, "bm25": db.bm25_retrieve, "hybrid": db.hybrid_retrieve}[mode]
+
+
+def eval_retrieval(top_k_initial: int, top_k_final: int, use_rerank: bool, limit: int | None, mode: str = "dense") -> dict:
     db = _eval_db()
     reranker = None
     if use_rerank:
         from retrieval.reranker import RerankerModel
         reranker = RerankerModel()
     qa = load_jsonl("qa.jsonl", limit)
+    retrieve = _retriever(db, mode)
     rows = []
     for q in qa:
         t0 = time.perf_counter()
-        docs = db.retrieve(q["question"], top_k=top_k_initial)
+        docs = retrieve(q["question"], top_k=top_k_initial)
         texts = [d.page_content for d in docs]
         t_ret = time.perf_counter() - t0
         pre_rank = evidence_rank(q["gold_evidence"], texts)
@@ -132,7 +137,7 @@ def eval_retrieval(top_k_initial: int, top_k_final: int, use_rerank: bool, limit
             row[f"post_recall@{top_k_final}"] = recall_at_k(q["gold_evidence"], ranked, top_k_final)
             row["post_mrr"] = mrr(q["gold_evidence"], ranked)
         rows.append(row)
-    agg = {"n": len(rows), "top_k_initial": top_k_initial, "top_k_final": top_k_final, "rerank": use_rerank,
+    agg = {"n": len(rows), "top_k_initial": top_k_initial, "top_k_final": top_k_final, "rerank": use_rerank, "mode": mode,
            f"pre_recall@{top_k_final}": round(mean([r[f"pre_recall@{top_k_final}"] for r in rows]), 4),
            f"pre_recall@{top_k_initial}": round(mean([r[f"pre_recall@{top_k_initial}"] for r in rows]), 4),
            "pre_mrr": round(mean([r["pre_mrr"] for r in rows]), 4),
@@ -153,7 +158,7 @@ def eval_retrieval(top_k_initial: int, top_k_final: int, use_rerank: bool, limit
 # ── answers ────────────────────────────────────────────────────────────────
 
 async def eval_answers(top_k_initial: int, top_k_final: int, use_rerank: bool, judge: bool,
-                       limit: int | None, model_choice: str) -> dict:
+                       limit: int | None, model_choice: str, mode: str = "dense") -> dict:
     from models.generation import GenerationModel
     db = _eval_db()
     reranker = None
@@ -166,9 +171,10 @@ async def eval_answers(top_k_initial: int, top_k_final: int, use_rerank: bool, j
         from verification.verifier import VerificationModule
         verifier = VerificationModule()
     qa = load_jsonl("qa.jsonl", limit)
+    retrieve = _retriever(db, mode)
     rows = []
     for q in qa:
-        docs = db.retrieve(q["question"], top_k=top_k_initial)
+        docs = retrieve(q["question"], top_k=top_k_initial)
         texts = [d.page_content for d in docs]
         srcs = [d.metadata.get("source", "?") for d in docs]
         context = reranker.rerank(q["question"], texts, top_k=top_k_final) if reranker else texts[:top_k_final]
@@ -188,7 +194,7 @@ async def eval_answers(top_k_initial: int, top_k_final: int, use_rerank: bool, j
             row["judge_reason"] = reason
         rows.append(row)
         logger.info(f"{q['id']} f1={row['token_f1']} contains={row['contains_gold']} support={row['lexical_support']}")
-    agg = {"n": len(rows), "rerank": use_rerank, "judge": judge,
+    agg = {"n": len(rows), "rerank": use_rerank, "judge": judge, "mode": mode,
            "evidence_in_context_rate": round(mean([float(r["evidence_in_context"]) for r in rows]), 4),
            "token_f1_mean": round(mean([r["token_f1"] for r in rows]), 4),
            "contains_gold_rate": round(mean([r["contains_gold"] for r in rows]), 4),
@@ -216,11 +222,11 @@ def summarize(results: dict) -> str:
     if "retrieval" in results:
         r = results["retrieval"]; k, K = r["top_k_final"], r["top_k_initial"]
         post = f" | post-rerank recall@{k} {r[f'post_recall@{k}']:.3f}, MRR {r['post_mrr']:.3f}" if r["rerank"] else " | rerank OFF"
-        lines.append(f"| retrieval | n={r['n']} | recall@{k} {r[f'pre_recall@{k}']:.3f}, recall@{K} {r[f'pre_recall@{K}']:.3f}, MRR {r['pre_mrr']:.3f}{post} | misses {len(r['misses'])} |")
+        lines.append(f"| retrieval ({r.get('mode','dense')}) | n={r['n']} | recall@{k} {r[f'pre_recall@{k}']:.3f}, recall@{K} {r[f'pre_recall@{K}']:.3f}, MRR {r['pre_mrr']:.3f}{post} | misses {len(r['misses'])} |")
     if "answers" in results:
         r = results["answers"]
         judge = f" | judge PASS {r['judge_pass_rate']:.3f}" if r.get("judge") else ""
-        lines.append(f"| answers | n={r['n']} | token-F1 {r['token_f1_mean']:.3f} | contains-gold {r['contains_gold_rate']:.3f} (given evidence {r['contains_gold_given_evidence']}) | lexical support {r['lexical_support_mean']:.3f}{judge} | {r['generate_mean_s']}s/answer |")
+        lines.append(f"| answers ({r.get('mode','dense')}) | n={r['n']} | token-F1 {r['token_f1_mean']:.3f} | contains-gold {r['contains_gold_rate']:.3f} (given evidence {r['contains_gold_given_evidence']}) | lexical support {r['lexical_support_mean']:.3f}{judge} | {r['generate_mean_s']}s/answer |")
     return "\n".join(lines)
 
 
@@ -231,6 +237,7 @@ def main():
     ap.add_argument("--top-k", type=int, default=5, help="final top-k passed to the LLM")
     ap.add_argument("--top-k-initial", type=int, default=10, help="FAISS candidates before reranking")
     ap.add_argument("--no-rerank", action="store_true", help="ablation: skip the cross-encoder")
+    ap.add_argument("--retrieval", choices=["dense", "bm25", "hybrid"], default="dense", help="retrieval mode (ablation)")
     ap.add_argument("--judge", action="store_true", help="answers: also run the LLM verifier as a judge")
     ap.add_argument("--limit", type=int, default=None, help="only the first N qa items (quick runs)")
     ap.add_argument("--model", default="auto", help="model_choice for LLM calls: auto|local|api|claude")
@@ -246,10 +253,10 @@ def main():
     if args.suite in ("routing", "all"):
         results["routing"] = eval_routing(args.runs, args.model)
     if args.suite in ("retrieval", "all"):
-        results["retrieval"] = eval_retrieval(args.top_k_initial, args.top_k, not args.no_rerank, args.limit)
+        results["retrieval"] = eval_retrieval(args.top_k_initial, args.top_k, not args.no_rerank, args.limit, args.retrieval)
     if args.suite in ("answers", "all"):
         results["answers"] = asyncio.run(eval_answers(args.top_k_initial, args.top_k, not args.no_rerank,
-                                                      args.judge, args.limit, args.model))
+                                                      args.judge, args.limit, args.model, args.retrieval))
     results["elapsed_s"] = round(time.time() - t0, 1)
 
     os.makedirs(RESULTS, exist_ok=True)

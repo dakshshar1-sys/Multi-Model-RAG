@@ -1,4 +1,5 @@
 import asyncio
+import os
 import re
 import logging
 from typing import AsyncGenerator
@@ -782,7 +783,12 @@ Rewritten:"""
         yield emit("Embedding Model", "Completed", "Vector embedding generated successfully")
 
         yield emit("Vector Retrieval", "Processing", "Searching FAISS vector database for nearest neighbors")
-        docs = self.vector_db.retrieve(search_query, top_k=10)
+        # Hybrid (dense + BM25, rank-fused) unless HYBRID_RETRIEVAL=0. Measured on the
+        # eval set: dense-only top-5 hit 50/64, hybrid candidates cover 62/64.
+        if os.getenv("HYBRID_RETRIEVAL", "1").lower() not in ("0", "false", "no"):
+            docs = self.vector_db.hybrid_retrieve(search_query, top_k=10)
+        else:
+            docs = self.vector_db.retrieve(search_query, top_k=10)
         doc_texts = [d.page_content for d in docs]
         sources = [d.metadata.get("source", "Unknown") for d in docs]
         

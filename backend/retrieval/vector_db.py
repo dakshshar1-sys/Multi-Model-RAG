@@ -1,15 +1,26 @@
 import os
 import logging
 from langchain_community.vectorstores import FAISS
+from retrieval.bm25 import BM25Index, reciprocal_rank_fusion
 from models.embedding import LocalEmbeddingModel
 from langchain_core.documents import Document
 
 logger = logging.getLogger(__name__)
 
+# FAISS needs one document to initialise; this placeholder must never be retrieved
+# or indexed lexically.
+PLACEHOLDER_TEXT = "Initial empty document."
+
+
 class VectorDatabase:
     """Vector database for storing and retrieving document embeddings using FAISS."""
     def __init__(self, index_path: str = "faiss_index"):
         self.index_path = index_path
+        # Lexical side of hybrid retrieval, rebuilt lazily whenever the store changes.
+        self._store_version = 0
+        self._bm25: BM25Index | None = None
+        self._bm25_version = -1
+        self._content_to_id: dict[str, str] = {}
         self.embeddings = LocalEmbeddingModel()
         self.vector_store = None
         self._load_or_create_index()
@@ -33,7 +44,7 @@ class VectorDatabase:
         try:
             os.makedirs(self.index_path, exist_ok=True)
             # FAISS needs at least one document to initialize
-            empty_doc = Document(page_content="Initial empty document.", metadata={"source": "system"})
+            empty_doc = Document(page_content=PLACEHOLDER_TEXT, metadata={"source": "system"})
             self.vector_store = FAISS.from_documents([empty_doc], self.embeddings)
             logger.info("New FAISS index created successfully.")
         except Exception as e:
@@ -51,6 +62,7 @@ class VectorDatabase:
         try:
             logger.info(f"Adding {len(documents)} documents to FAISS index...")
             self.vector_store.add_documents(documents)
+            self._store_version += 1
             self.save_index()
             logger.info(f"Successfully added {len(documents)} documents to FAISS index.")
         except Exception as e:
@@ -70,9 +82,56 @@ class VectorDatabase:
         if not ids:
             return 0
         self.vector_store.delete(ids)
+        self._store_version += 1
         self.save_index()
         logger.info(f"Deleted {len(ids)} chunks for source '{source}'.")
         return len(ids)
+
+    # ── hybrid retrieval ──────────────────────────────────────────────────
+    def _all_chunks(self) -> list[tuple[str, Document]]:
+        vs = self.vector_store
+        if not vs:
+            return []
+        out = []
+        for doc_id in vs.index_to_docstore_id.values():
+            doc = vs.docstore.search(doc_id)
+            if isinstance(doc, Document) and doc.page_content and doc.page_content.strip() \
+                    and doc.page_content.strip() != PLACEHOLDER_TEXT:
+                out.append((doc_id, doc))
+        return out
+
+    def _ensure_bm25(self) -> BM25Index:
+        if self._bm25 is None or self._bm25_version != self._store_version:
+            chunks = self._all_chunks()
+            self._bm25 = BM25Index().build([(doc_id, d.page_content) for doc_id, d in chunks])
+            self._content_to_id = {d.page_content: doc_id for doc_id, d in chunks}
+            self._bm25_version = self._store_version
+            logger.info(f"BM25 index built over {len(self._bm25)} chunks.")
+        return self._bm25
+
+    def bm25_retrieve(self, query: str, top_k: int = 5) -> list[Document]:
+        """Lexical-only retrieval (for ablations)."""
+        bm25 = self._ensure_bm25()
+        docstore = self.vector_store.docstore
+        return [docstore.search(doc_id) for doc_id, _ in bm25.search(query, top_k)]
+
+    def hybrid_retrieve(self, query: str, top_k: int = 5, pool: int | None = None, rrf_k: int = 60) -> list[Document]:
+        """
+        Dense + lexical retrieval fused with reciprocal rank fusion. Each side
+        contributes a candidate pool (default 2*top_k, min 20); the fused order is
+        cut to top_k. Falls back to dense-only if the lexical side has nothing.
+        """
+        pool = pool or max(2 * top_k, 20)
+        dense_docs = self.retrieve(query, top_k=pool)
+        bm25 = self._ensure_bm25()
+        docstore = self.vector_store.docstore
+        dense_ids = [self._content_to_id.get(d.page_content) for d in dense_docs]
+        dense_ids = [i for i in dense_ids if i]
+        lex_ids = [doc_id for doc_id, _ in bm25.search(query, pool)]
+        if not lex_ids:
+            return dense_docs[:top_k]
+        fused = reciprocal_rank_fusion([dense_ids, lex_ids], k=rrf_k)
+        return [docstore.search(doc_id) for doc_id in fused[:top_k]]
 
     def retrieve(self, query: str, top_k: int = 5) -> list[Document]:
         """

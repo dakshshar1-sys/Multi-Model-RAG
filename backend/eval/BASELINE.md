@@ -57,8 +57,32 @@ Two findings to write up:
    and it disagrees with the lexical proxy on 17 items: q06, q07, q14, q18, q19, q22, q23, q31, q33, q34, q35, q40, q42, q45, q59, q60, q64. Read those by hand;
    they are the material for a section on why a 3B verifier is not a reliable judge.
 
+## Hybrid retrieval — measured 2026-09-20 (same day, after the diagnostic above)
+
+BM25 (dependency-free, `retrieval/bm25.py`) over the same chunks, fused with dense by
+reciprocal rank fusion (k=60, candidate pools of 20 each), then the same cross-encoder.
+
+| configuration | recall@5 | recall@10 | MRR | misses (top-10) |
+|---|---|---|---|---|
+| dense only | 0.781 | 0.922 | 0.681 | 5 |
+| dense + rerank (previous default) | 0.891 | 0.922 | 0.831 | 5 |
+| **hybrid, no rerank** | **0.938** | **0.984** | 0.803 | 1 (q20) |
+| hybrid + rerank (new default) | 0.922 | 0.984 | **0.866** | 1 |
+| BM25 only, no rerank | 0.969 | 1.000 | 0.890 | 0 |
+
+Three things to write up honestly:
+
+1. **Hybrid delivers what the diagnostic predicted**: recall@5 0.781 → 0.938, recall@10 0.922 → 0.984.
+2. **After hybrid, the reranker slightly lowers recall@5** (0.938 → 0.922; pushed out ['q23', 'q42', 'q56'], pulled in ['q06', 'q24'])
+   while still raising MRR (0.803 → 0.866). It reorders well but its top-5 cut costs a hit. Options to
+   test: pass top-6/7 after reranking, or rerank only when the fused pool disagrees.
+3. **BM25 alone scores highest on this set (0.969).** That is a property of the questions, not the method:
+   they were written by reading the documents and reuse their vocabulary, which favours lexical matching.
+   Real users paraphrase, which favours dense. This is why the default is hybrid, not lexical-only, and it is
+   the strongest argument for adding a paraphrased question set (or questions from someone who has not read
+   the corpus) before drawing conclusions about dense vs lexical.
+
 ## Not yet measured
 
-- Hybrid retrieval (next change; the diagnostic above predicts recall@5 ≈ 0.95+).
 - OCR ingestion (added the same day; measure with a scanned-PDF corpus once one exists).
 - `qa.jsonl` items are still `reviewed: false`; re-run after review and record the delta.
