@@ -53,6 +53,38 @@ const isMessageDraft = (a: PendingAction) => !isFileDraft(a) && MESSAGE_KINDS.ha
 const draftLabel = (a: PendingAction) =>
   isFileDraft(a) ? DRAFT_LABELS.file : DRAFT_LABELS[a.kind] ?? `Draft ${a.kind} · awaiting approval`;
 
+// The ingest response reports how each PDF page was read. Scanned pages (no usable
+// text layer) are OCR'd; say so, with the text-quality score before and after, so
+// the user can see the recovery rather than just a chunk count.
+type IngestResult = {
+  chunks: number;
+  replaced_chunks?: number;
+  extraction?: {
+    pages: number;
+    ocr_pages: number;
+    ocr_failed_pages: number;
+    text_quality_before: number | null;
+    text_quality_after: number | null;
+  };
+};
+function describeExtraction(r: IngestResult): string {
+  const parts: string[] = [];
+  const ex = r.extraction;
+  if (ex && ex.ocr_pages > 0) {
+    const q = ex.text_quality_before != null && ex.text_quality_after != null
+      ? ` — text quality ${ex.text_quality_before.toFixed(2)} → ${ex.text_quality_after.toFixed(2)}`
+      : "";
+    parts.push(`OCR recovered ${ex.ocr_pages} of ${ex.pages} scanned page${ex.pages === 1 ? "" : "s"}${q}`);
+  }
+  if (ex && ex.ocr_failed_pages > 0) {
+    parts.push(`${ex.ocr_failed_pages} page${ex.ocr_failed_pages === 1 ? "" : "s"} could not be OCR'd and kept the original text`);
+  }
+  if (r.replaced_chunks && r.replaced_chunks > 0) {
+    parts.push(`replaced ${r.replaced_chunks} earlier chunk${r.replaced_chunks === 1 ? "" : "s"} of this file`);
+  }
+  return parts.length ? ` ${parts.join("; ")}.` : "";
+}
+
 export default function QueryPanel({ messages, setMessages, conversationId }: QueryPanelProps) {
   const [hasMounted, setHasMounted] = useState(false);
   const [input, setInput] = useState("");
@@ -437,10 +469,10 @@ export default function QueryPanel({ messages, setMessages, conversationId }: Qu
         const result = await ingestDocument(file);
         setLiveStages((prev) => prev.map((stage) =>
           stage.model === "Document Ingestion"
-            ? { ...stage, status: "Completed", action: `Ingested ${result.chunks} chunks from ${file.name}` }
+            ? { ...stage, status: "Completed", action: `Ingested ${result.chunks} chunks from ${file.name}${describeExtraction(result)}` }
             : stage
         ));
-        appendSystemMessage(`Document ingested: ${file.name} (${result.chunks} chunks).`);
+        appendSystemMessage(`Document ingested: ${file.name} (${result.chunks} chunks).${describeExtraction(result)}`);
       }
 
       for (const url of urlSnapshot) {
