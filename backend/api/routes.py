@@ -83,6 +83,12 @@ def list_documents():
     return {"documents": [{"source": k, **v} for k, v in sorted(counts.items())]}
 
 
+@router.get("/traces")
+def recent_traces(limit: int = 50):
+    """The last N request traces: per-stage timings, tool, cache/degraded flags, totals."""
+    return {"traces": orchestrator.trace_log.tail(max(1, min(limit, 500)))}
+
+
 @router.delete("/documents/{source}")
 def delete_document(source: str):
     """Remove every chunk of one source from the knowledge base."""

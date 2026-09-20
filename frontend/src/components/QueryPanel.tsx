@@ -19,6 +19,15 @@ interface QueryPanelProps {
   conversationId: string | null;
 }
 
+// Timings ride on the stage events: a Completed stage carries its own duration (ms);
+// the final response carries elapsed time since the request began (t_ms) = the total.
+const stageTiming = (stage: PipelineStage): string | null => {
+  if (stage.status !== "Completed") return null;
+  if (stage.model === "Final Response" && stage.t_ms != null) return `${(stage.t_ms / 1000).toFixed(1)}s total`;
+  if (stage.ms != null && stage.ms >= 100) return `${(stage.ms / 1000).toFixed(1)}s`;
+  return null;
+};
+
 // Moving StageDisplay outside the component to prevent re-creation on every render
 const StageDisplay = ({ stages }: { stages: PipelineStage[] }) => (
   <div className="flex flex-col gap-2 p-4 bg-cream-100 border border-cream-300 rounded-3xl mt-4 max-w-[500px]">
@@ -31,6 +40,9 @@ const StageDisplay = ({ stages }: { stages: PipelineStage[] }) => (
         }`} />
         <span className="text-ink font-semibold min-w-[140px] text-xs">{stage.model}</span>
         <span className="truncate opacity-70 italic">{stage.action}</span>
+        {stageTiming(stage) && (
+          <span className="ml-auto shrink-0 tabular-nums text-[10px] text-stone-400">{stageTiming(stage)}</span>
+        )}
       </div>
     ))}
   </div>

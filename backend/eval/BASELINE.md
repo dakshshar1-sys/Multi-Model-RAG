@@ -82,7 +82,28 @@ Three things to write up honestly:
    the strongest argument for adding a paraphrased question set (or questions from someone who has not read
    the corpus) before drawing conclusions about dense vs lexical.
 
+## Latency — first traced request, 2026-09-21
+
+Per-request tracing (`core/request_trace.py`, `GET /api/traces`) now records every stage.
+A knowledge-base question through the full pipeline (hybrid retrieval + rerank + generation +
+verification), no cache:
+
+| stage | time |
+|---|---|
+| Agent Router (3B classifier) | 1.2 s |
+| Vector Retrieval (hybrid) | 0.3 s |
+| Reranking Model (cross-encoder, CPU) | 1.2 s |
+| Generation (qwen2.5:3b, ~150 words) | 9.1 s |
+| **total** | **16.5 s** |
+
+Generation is ~55% of the total; routing and reranking are ~15% together. A cache hit
+returns in 4 ms. The remainder is the history rewrite and verification (also LLM calls).
+The obvious levers, in order: skip the rewrite when there is no history (already done),
+stream generation (already done), and a smaller verifier or a rule-based first pass.
+Collect a distribution from `traces.jsonl` before optimising anything.
+
 ## Not yet measured
 
+- Latency distribution over many requests (traces.jsonl accumulates; one request is not a benchmark).
 - OCR ingestion (added the same day; measure with a scanned-PDF corpus once one exists).
 - `qa.jsonl` items are still `reviewed: false`; re-run after review and record the delta.

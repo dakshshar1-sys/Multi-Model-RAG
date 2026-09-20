@@ -22,6 +22,7 @@ from actions.whatsapp_client import WhatsAppClient
 from actions.telegram_client import TelegramClient
 from actions.workspace import WorkspaceAgent, resolve_existing_target
 from core.conversation_state import ConversationStore
+from core.request_trace import RequestTrace, TraceLog
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +100,7 @@ class MasterOrchestrator:
         self.cache = ResponseCache()
         # Per-conversation state (last uploaded image, ...). See core/conversation_state.py.
         self.conversations = ConversationStore()
+        self.trace_log = TraceLog()   # per-request timings, see core/request_trace.py
 
         # Outbound actions (email / WhatsApp). These are the only parts of the system
         # that can affect the outside world, so they never fire on their own: the agent
@@ -116,10 +118,24 @@ class MasterOrchestrator:
         """
         Executes the entire RAG pipeline and yields SSE JSON strings at each step.
         """
+        trace = RequestTrace(query, conversation_id, model_choice)
+
         def emit(model, status, action, details=None):
             data = {"model": model, "status": status, "action": action}
             if details:
                 data["details"] = details
+            # Tracing rides on the events the pipeline already narrates: every event
+            # carries elapsed ms, a Completed event carries its stage's duration, and
+            # the final response carries the whole request's summary.
+            data["t_ms"] = trace.record(data)
+            if status == "Completed" and trace.stages and trace.stages[-1]["model"] == model:
+                data["ms"] = trace.stages[-1]["ms"]
+            if model == "Final Response" and status == "Completed":
+                summary = trace.summary()
+                data.setdefault("details", {})["trace"] = summary
+                self.trace_log.append(summary)
+                logger.info("TRACE " + json.dumps({k: summary[k] for k in
+                            ("request_id", "conversation_id", "tool", "total_ms", "cache_hit", "search_degraded", "chart", "verification", "ms_by_model")}))
             return json.dumps(data)
 
         # 1. Start pipeline

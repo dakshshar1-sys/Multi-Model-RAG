@@ -8,6 +8,8 @@ export type PipelineStage = {
   status: string;
   action: string;
   details?: any;
+  t_ms?: number;   // elapsed since the request started
+  ms?: number;     // this stage's own duration (Completed events only)
 };
 
 export type PendingAction = {
