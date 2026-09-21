@@ -52,3 +52,12 @@ def test_trace_log_appends_and_tails(tmp_path):
     assert len(log.tail(100)) == 5
     with open(log.path) as f:
         assert all(json.loads(l) for l in f)
+
+
+def test_a_declined_request_is_recorded_as_abstained():
+    tr = RequestTrace("in my documents, what is the boiling point of ethanol?")
+    tr.record(_ev("Reranking Model", "Processing", "Cross-encoding"))
+    tr.record(_ev("Reranking Model", "Completed", "No passage is relevant enough (best -11.1, floor -5.0) — declining rather than guessing"))
+    tr.record(_ev("Final Response", "Completed", "Declined: not in the knowledge base", {"answer": "I couldn't find anything", "sources": [], "abstained": True}))
+    assert tr.summary()["abstained"] is True
+    assert RequestTrace("q").summary()["abstained"] is False

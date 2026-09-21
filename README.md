@@ -58,6 +58,8 @@ docker exec -w /app multimodelrag-backend-1 sh eval/run_all.sh
 
 - [`backend/eval/BASELINE.md`](backend/eval/BASELINE.md) — dated results: routing, retrieval (dense / hybrid / rerank), answer correctness, the whole-pipeline ablation, latency.
 - [`backend/eval/FAILURE_ANALYSIS.md`](backend/eval/FAILURE_ANALYSIS.md) — generated appendix of the system's actual failures.
+- [`backend/eval/ABSTENTION.md`](backend/eval/ABSTENTION.md) — does the system say "not in your documents" instead of inventing? 24 verified-unanswerable questions, the answer floor it motivated, and what the floor costs on answerable ones.
+- [`backend/eval/LATENCY_REPORT.md`](backend/eval/LATENCY_REPORT.md) — generated latency distribution (p50/p90/p95 per tool and per stage) from the recorded request traces; live at `GET /api/traces/summary`.
 - [`backend/eval/README.md`](backend/eval/README.md) — the harness, its datasets and metrics; [`INDEPENDENT_PROTOCOL.md`](backend/eval/datasets/INDEPENDENT_PROTOCOL.md) for the independent question set; `python -m eval.human_eval` for blind human ratings.
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — the pipeline as it actually is, with a diagram drawn from the modules.
 

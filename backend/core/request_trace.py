@@ -41,6 +41,7 @@ class RequestTrace:
         self.search_degraded = False
         self.chart = False
         self.verification: str | None = None
+        self.abstained = False
 
     def elapsed_ms(self) -> int:
         return int((time.perf_counter() - self._t0) * 1000)
@@ -71,6 +72,8 @@ class RequestTrace:
         details = event.get("details") or {}
         if details.get("chart"):
             self.chart = True
+        if details.get("abstained"):
+            self.abstained = True
         return ms
 
     def summary(self) -> dict:
@@ -82,7 +85,7 @@ class RequestTrace:
             "conversation_id": self.conversation_id, "model_choice": self.model_choice,
             "query": self.query[:200], "total_ms": self.elapsed_ms(),
             "tool": self.tool, "cache_hit": self.cache_hit, "search_degraded": self.search_degraded,
-            "chart": self.chart, "verification": self.verification,
+            "chart": self.chart, "verification": self.verification, "abstained": self.abstained,
             "retrieval_mode": "hybrid" if os.getenv("HYBRID_RETRIEVAL", "1").lower() not in ("0", "false", "no") else "dense",
             "stages": self.stages, "ms_by_model": by_model,
         }

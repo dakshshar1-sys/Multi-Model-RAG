@@ -16,5 +16,7 @@ echo "== retrieval ==";    for m in dense hybrid; do python -B -W ignore -m eval
                            python -B -W ignore -m eval.run_eval --suite retrieval --retrieval bm25 --no-rerank --label "ret_bm25_$LABEL" | grep -E '^\|'
 echo "== answers ==";      python -B -W ignore -m eval.run_eval --suite answers --judge --retrieval hybrid --label "answers_$LABEL" | grep -E '^\|'
 echo "== ablation ==";     python -B -W ignore -m eval.ablation --label "$LABEL" | grep -E '^\|'
+echo "== abstention ==";   python -B -W ignore -m eval.abstention --label "$LABEL" | grep -E '^\|'
 echo "== appendix ==";     python -B -W ignore -m eval.failure_analysis
+echo "== latency ==";      python -B -W ignore -m eval.latency_report
 echo "done: see eval/results/history.md and eval/FAILURE_ANALYSIS.md"

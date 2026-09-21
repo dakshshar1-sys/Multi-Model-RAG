@@ -23,6 +23,7 @@ from actions.telegram_client import TelegramClient
 from actions.workspace import WorkspaceAgent, resolve_existing_target
 from core.conversation_state import ConversationStore
 from core.request_trace import RequestTrace, TraceLog
+from retrieval.reranker import KB_ANSWER_MIN_SCORE, below_answer_floor
 
 logger = logging.getLogger(__name__)
 
@@ -843,7 +844,25 @@ Rewritten:"""
         yield emit("Vector Retrieval", "Completed", f"Retrieved {len(docs)} relevant chunks from database")
 
         yield emit("Reranking Model", "Processing", "Cross-encoding query and documents to filter relevance")
-        ranked_docs = await asyncio.to_thread(self.reranker.rerank, search_query, doc_texts, top_k=5)
+        scored_docs = await asyncio.to_thread(self.reranker.rerank_with_scores, search_query, doc_texts, top_k=5)
+        ranked_docs = [doc for _, doc in scored_docs]
+        best_score = scored_docs[0][0] if scored_docs else None
+
+        # Answer floor: if even the best passage is not about the question, decline. Without
+        # this the model answers from its own memory and cites [1] for a source that says
+        # nothing of the kind (measured: "boiling point of ethanol" -> "78.4 C [1]").
+        # Skipped when the question carries its own material (an image, or inline data).
+        carries_own_material = bool(image_context) or (len(re.findall(r'\d+', query)) >= 3)
+        if below_answer_floor(best_score) and not carries_own_material:
+            logger.info(f"KB answer floor: best passage {best_score:.2f} < {KB_ANSWER_MIN_SCORE:.1f}; declining without generation.")
+            yield emit("Reranking Model", "Completed", f"No passage is relevant enough (best {best_score:.1f}, floor {KB_ANSWER_MIN_SCORE:.1f}) — declining rather than guessing")
+            yield emit("Final Response", "Completed", "Declined: not in the knowledge base", {
+                "answer": ("I couldn't find anything about this in your documents, so I won't guess. "
+                           "Try rephrasing, upload a document that covers it, or ask me to search the web for it."),
+                "sources": [],
+                "abstained": True,
+            })
+            return
         yield emit("Reranking Model", "Completed", f"Filtered down to top {len(ranked_docs)} most relevant contexts")
 
         yield emit("Generation", "Processing", "Synthesizing answer using LLM and retrieved context")
