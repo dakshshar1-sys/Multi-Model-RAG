@@ -23,9 +23,9 @@ RESULTS = os.path.join(HERE, "results")
 OUT = os.path.join(HERE, "FAILURE_ANALYSIS.md")
 
 
-def latest(prefix: str) -> dict | None:
-    fs = sorted(glob.glob(os.path.join(RESULTS, f"{prefix}_*.json")), key=os.path.getmtime)
-    return json.load(open(fs[-1], encoding="utf-8")) if fs else None
+def latest(prefix):
+    from eval.results_io import latest_result
+    return latest_result(prefix, RESULTS)
 
 
 def _q(text: str, n: int = 110) -> str:
