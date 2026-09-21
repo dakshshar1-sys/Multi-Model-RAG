@@ -1,0 +1,159 @@
+row,id,question,answer,correctness_1_5,groundedness_1_5,comment
+1,q22,What does the architecture document mean by a Glass Box AI experience?,"The architecture document refers to MultiModelRAG as providing a ""Glass Box"" AI experience. This means that users can see every step of the agent's thought process, including query rewriting, tool selection, cross-encoding, reranking, and the final hallucination check. This visibility into how decisions are made is provided through Server-Sent Events (SSE), allowing users to observe a live ""Pipeline Execution Path"" on the frontend.
+
+Detailed Analysis:
+MultiModelRAG differentiates itself by offering transparent AI operations where users can follow every part of the decision-making process, whic",,,
+2,q44,How many candidates does FAISS fetch initially and how many chunks reach the LLM after reranking?,"FAISS fetches **Top-10 candidates** initially. After reranking, only the Top-5 highest-scoring chunks are passed to the LLM's context window.
+
+Detailed Analysis:
+- The system employs a ""Double-Filter"" approach, where FAISS first fetches and ranks 10 candidates based on similarity.
+- Subsequently, these 10 results undergo re-ranking using the `BGE-Reranker-v2-m3` model to ensure more relevant chunks are selected for the final context window of the LLM.
+- The reranking process is designed to reduce noise and improve the quality of information fed into the large language model (LLM), particularly",,,
+3,q51,What end-to-end pipeline latency does the document benchmark?,The end-to-end pipeline latency benchmarks provided in the document range from **10s to 15s** [Source 1].,,,
+4,q02,Which two encoding techniques does the report name under machine learning-based RAG?,"The report names two encoding techniques used in machine learning-based retrieval-Augmented Generation (RAG) systems:
+
+1. Dense Passage Retrieval (DPR)
+2. Bi-Encoder architectures like BERT
+
+These techniques have helped to build systems based on meanings instead of being restricted to keywords, improving the accuracy and effectiveness of RAG methods.",,,
+5,q21,What future research direction does the report suggest for images and charts?,"The provided context does not explicitly mention any future research directions specifically for images and charts. The documents cover various aspects of a document generation system, including backend processing, frontend development, data visualization, and integration with external tools like the Visualizer Agent.
+
+### 🎯 THE DIRECT ANSWER (MANDATORY)
+The report does not provide specific future research directions related to images and charts.
+
+### 🔍 SUPPORTING DETAILS & CONTEXT
+- The context describes how the system processes text inputs, generates analytical reports, and visualizations. I",,,
+6,q51,What end-to-end pipeline latency does the document benchmark?,"The end-to-end pipeline latency of MultiModelRAG is between 10 seconds and 15 seconds. This range is provided in [Source 1], which details various benchmarks including the end-to-end pipeline latency under different conditions, such as hardware dependency for generation tasks.",,,
+7,q17,What are metadata signatures used for in RAG data integrity?,"Metadata Signatures in RAG are used to verify the authenticity of sources and prevent tampering. This ensures that the ingested documents remain unaltered and accurate over time, contributing to maintaining high levels of data integrity in the system.",,,
+8,q46,Which three services does docker-compose.yml define according to the deployment guide?,"The `docker-compose.yml` defines the following three services:
+
+1. backend - The FastAPI server.
+2. frontend - The Next.js 15 application.
+3. ollama (Optional) - Can be run in a container with GPU passthrough (`--gpus all`).",,,
+9,q56,What is a stated con of NLP-based contextual correction for RAG systems?,The stated con of NLP-based contextual correction for RAG systems is that the performance may vary across different document formats and languages. [1],,,
+10,q17,What are metadata signatures used for in RAG data integrity?,"Metadata Signatures in RAG systems are used to verify the authenticity of sources and prevent tampering. They ensure that the documents remain unaltered and proper over time, contributing to maintaining the integrity of ingested data.",,,
+11,q11,What do statistical detection methods use to approximate chunk relevance?,Statistical detection methods use cosine similarity scores to approximate the likelihood of chunk relevance. These techniques are effective at filtering but require fine-tuned models. [1],,,
+12,q55,Who authored the study on AI-based RAG error detection using deep learning?,"The study on AI-based RAG error detection using deep learning was authored by Lewis P., et al. from Facebook AI Research. [1]",,,
+13,q01,"According to the survey report, what were early RAG systems based on?","Early RAG systems were based on simple keyword search and basic similarity systems [Source 1]. These systems compared user queries to document headers and used lexical matching to recognize text. They worked satisfactorily with narrow topics and small datasets; however, they failed on noisy or convoluted documents [Source 1].",,,
+14,q13,What is the drawback of cross-encoder models for deep learning-based detection?,"The drawbacks of cross-encoder models for deep learning-based detection are that these models require a lot of computational power. [Source 4] and [Source 5] provide relevant information on retrieval-augmented generation (RAG) technologies, including the use of cross-encoder models in deep learning methods.",,,
+15,q23,Why was FastAPI chosen as the backend framework?,"FastAPI was chosen as the backend framework due to its asynchronous capabilities, which are essential for handling long-running AI inference tasks and streaming Server-Sent Events (SSE) updates without blocking the event loop. This choice ensures efficient and responsive performance in processing heavy AI workloads like Llama 3.2 on consumer-grade hardware [1].",,,
+16,q56,What is a stated con of NLP-based contextual correction for RAG systems?,A stated con of NLP-based contextual correction for RAG systems is that the performance may vary across different document formats and languages [1].,,,
+17,q44,How many candidates does FAISS fetch initially and how many chunks reach the LLM after reranking?,"FAISS fetches **Top-10** candidates initially from the index, and after applying the **BGE-Reranker-v2-m3 model**, only the **Top-5 highest-scoring chunks** are passed to the context window of the LLM. This approach ensures that noise is significantly reduced and prevents issues such as ""The Lost in the Middle"" phenomenon commonly observed in large language models (LLMs).",,,
+18,q54,Which backend technologies does the proposed model list for managing secure data flow?,The proposed model uses **Node.js** and **Python** for managing secure data flow. [1],,,
+19,q11,What do statistical detection methods use to approximate chunk relevance?,Statistical detection methods use cosine similarity scores to approximate the likelihood of chunk relevance. These techniques are effective at filtering but require fine-tuned models. [1],,,
+20,q46,Which three services does docker-compose.yml define according to the deployment guide?,"According to the deployment guide, the `docker-compose.yml` defines the following three services:
+
+- `backend`: The FastAPI server.
+- `frontend`: The Next.js 15 application.
+- `ollama`: An optional service that can run in a container with GPU passthrough (`--gpus all`) if needed.",,,
+21,q22,What does the architecture document mean by a Glass Box AI experience?,"The architecture document refers to a ""Glass Box"" AI experience as one where users see every step of the AI system's thought process. In contrast to a ""Black Box"" system, which only shows the user a query and response without any intermediary steps, the Intelligent Agentic Router in MultiModelRAG uses Server-Sent Events (SSE) to stream live updates about the entire pipeline execution path from query rewriting and tool selection through cross-encoding, reranking, and final hallucination check. This allows users to observe every step of how a request is processed by the system.
+
+[1]",,,
+22,q13,What is the drawback of cross-encoder models for deep learning-based detection?,The drawback of cross-encoder models for deep learning-based detection is that they require a lot of computational power. [1],,,
+23,q43,Why does the system use L2 distance rather than inner product for similarity search?,"The system uses L2 (Euclidean) distance for similarity search because it provides more stable results for normalized embeddings generated by the MiniLM model. This is stated directly in the context from [Source 1], chapter_report.txt, on page 11.2.",,,
+24,q12,Which three context-based agent methods are listed for error detection?,"The three context-based agent methods listed for error detection are:
+
+- Fact-Checking Agent
+- Multi-Source Verification (RAG)
+- Chain-of-Thought (CoT) [1]
+
+These methods are discussed in detail under the ""Context-Based Agent Methods"" section, highlighting their effectiveness in identifying semantically incorrect claims that might go unnoticed by simpler systems.",,,
+25,q51,What end-to-end pipeline latency does the document benchmark?,The end-to-end pipeline latency benchmarks provided in the document range from **10 seconds** to **15 seconds**. [1],,,
+26,q54,Which backend technologies does the proposed model list for managing secure data flow?,"The proposed model lists Ollama and FAISS as backend technologies for managing secure data flow. These technologies are integrated locally to ensure sensitive enterprise data never touches external Large Language Model (LLM) APIs, which is a critical feature for government or legal sectors where data residency is a requirement.
+
+Detailed Analysis:
+- **Chapter Report (Source 3 & Source 5)**: The system includes Ollama and FAISS as core components of the backend architecture. Ollama likely refers to an enterprise-level language model that runs locally, ensuring data stays within the organization",,,
+27,q55,Who authored the study on AI-based RAG error detection using deep learning?,"**The author of the study on AI-based RAG error detection using deep learning is Lewis P., et al. (Facebook AI Research).**
+
+Detailed Analysis:
+- This information comes directly from [Source 1] in the provided context, specifically Chapter-2, which mentions this study.
+- No conflicting information was found regarding the authors of this particular study.
+
+There are no tables or additional detailed analyses needed for answering the user's query.",,,
+28,q55,Who authored the study on AI-based RAG error detection using deep learning?,"The author of the study on AI-based RAG error detection using deep learning is Lewis P., et al. (Facebook AI Research). [1]",,,
+29,q54,Which backend technologies does the proposed model list for managing secure data flow?,"The proposed model utilizes Python-based technologies for managing secure data flow. Specifically, Node.js and Python are mentioned in [Source 3] (from: chapter_report.txt), where it states that ""Backend services built with Node.js and Python manage secure data flow, multi-agent communication, authentication, and real-time synchronization.""
+
+For additional context from [Source 4] (from: system_architecture.txt), FastAPI is used for high-performance backend development. Therefore, the complete list of backend technologies mentioned for managing secure data flow includes:
+
+- Node.js
+- Python
+
+Th",,,
+30,q57,Who are the authors of the statistical learning approach to RAG fact correction?,"The authors of the statistical learning approach to RAG fact correction are Mei J., Aminul Islam, et al. [1]",,,
+31,q09,What are the structural errors named in the report?,"The report names two specific types of structural errors:
+
+- Incorrect chunking logic [Source 1]
+- Table and metadata misalignment [Source 1]",,,
+32,q20,Name two research gaps identified in the survey report.,"The context provided does not contain any information about a survey report or its findings. Therefore, there are no research gaps to identify based on the given data. Please provide more specific details from the source material for analysis.",,,
+33,q09,What are the structural errors named in the report?,"The report identifies two types of structural errors:
+
+1. **Incorrect chunking logic**: This error involves issues with how large documents are broken down into manageable chunks for processing.
+2. **Table and metadata misalignment**: There is a discrepancy or inconsistency between tables within documents and the accompanying metadata, leading to potential confusion or incorrect interpretations.
+
+These errors were noted in section 3.3 of [Source 1].",,,
+34,q11,What do statistical detection methods use to approximate chunk relevance?,Statistical detection methods use similarity scores (cosine) to approximate the likelihood of chunk relevance. These techniques are effective at filtering but require fine-tuned models [Source 1].,,,
+35,q17,What are metadata signatures used for in RAG data integrity?,"Metadata signatures are used to verify the authenticity of sources and prevent tampering in RAG data integrity. This is discussed in detail in [Source 1], which states, ""7.3 Metadata Signatures Used to verify the authenticity of sources and to prevent tampering.""",,,
+36,q23,Why was FastAPI chosen as the backend framework?,"FastAPI was chosen as the backend framework for several reasons. First, it provides high-performance backend development suitable for handling requests and managing document processing pipelines efficiently [Source 2]. Additionally, its integration with Next.js frontend via CORS (Cross-Origin Resource Sharing) allows seamless communication between different parts of the system [Source 1]. FastAPI also supports multi-agent communication, authentication, and real-time synchronization, which are crucial for a robust backend architecture that manages secure data flow [Source 3].",,,
+37,q32,How does the reranker reduce context noise for the LLM?,"The BGE-Reranker-v2-m3 model is used to score the Top-10 candidates fetched by FAISS. After fetching the initial 10 candidates, the Reranking step employs this model to ensure that only the highest-scoring chunks are passed to the LLM's context window for synthesis. This approach helps significantly reduce noise and prevents a phenomenon known as ""The Lost in the Middle,"" which refers to overly generic or irrelevant responses often encountered with large language models (LLMs). By selecting only the top 5 chunks, the Reranker ensures that the LLM receives more focused, relevant information, im",,,
+38,q23,Why was FastAPI chosen as the backend framework?,"FastAPI was chosen as the backend framework due to its high performance and ease of use. The context from [Source 1] states that ""Backend: FastAPI (Python) is used for high-performance backend development, providing APIs for handling requests, managing document processing pipelines, authentication, and communication between system components."" Additionally, [Source 3] highlights the proposed model's integration with AI-driven RAG verification modules deployed through high-performance FastAPI endpoints for real-time text processing and validation.",,,
+39,q32,How does the reranker reduce context noise for the LLM?,"The `BGE-Reranker-v2-m3` model is used to re-sort the top 10 results fetched by FAISS, ensuring that only the most relevant and semantically relevant chunks are passed to the LLM's context window. This ""Double-Filter"" approach significantly reduces noise and prevents issues like ""The Lost in the Middle,"" where irrelevant or low-relevance information could lead to incorrect or confusing responses from the Large Language Model (LLM).",,,
+40,q44,How many candidates does FAISS fetch initially and how many chunks reach the LLM after reranking?,"FAISS fetches **Top-10** candidates initially. After reranking with the `BGE-Reranker-v2-m3` model, only the **Top-5 highest-scoring chunks** are passed to the LLM's context window.",,,
+41,q01,"According to the survey report, what were early RAG systems based on?","Early Retrieval-Augmented Generation (RAG) systems were based on simple keyword search and basic similarity systems. These systems compared user queries to document headers and used lexical matching to recognize text. They worked satisfactorily with narrow topics and small datasets, but failed when dealing with noisy or convoluted documents. [Source 1]",,,
+42,q13,What is the drawback of cross-encoder models for deep learning-based detection?,"The drawback of cross-encoder models for deep learning-based detection, as mentioned in the context from [Source 4], is that they require high-quality vector datasets. Additionally, their performance may vary across different document formats and languages. They do not fully incorporate multi-modal validation or user-assisted correction mechanisms.",,,
+43,q21,What future research direction does the report suggest for images and charts?,The report suggests exploring multi-modal RAG for images and charts as a future research direction.,,,
+44,q02,Which two encoding techniques does the report name under machine learning-based RAG?,The report names Dense Passage Retrieval (DPR) and Bi-Encoder architectures (BERT) as the encoding techniques used in machine learning-based RAG. These techniques have helped to build systems based on meanings instead of being restricted to keywords. [1],,,
+45,q20,Name two research gaps identified in the survey report.,"Two research gaps identified in the survey report are:
+1. **Poor retrieval quality and noise**: The multi-model RAG systems, while effective for structured document formats [Source 3], continue to experience errors due to poor retrieval quality, noise, hallucinated facts, complex semantic structures, and domain-specific terms such as those found in financial documents [Source 3].
+2. **Lack of integration with domain-specific validation**: Current multi-model RAG systems are limited in their adaptability for highly unstructured or noisy documents and lack the integration required to validate cr",,,
+46,q46,Which three services does docker-compose.yml define according to the deployment guide?,"The Docker Compose file (`docker-compose.yml`) defines three services:
+- `backend`: The FastAPI server.
+- `frontend`: The Next.js 15 application.
+- `ollama`: An optional service that can run in a container with GPU passthrough enabled.
+
+Detailed Analysis:
+
+Based on the provided deployment guide and architecture context, the `docker-compose.yml` file is configured to include these three services:
+1. `backend`: This represents the FastAPI server component of the application.
+2. `frontend`: The Next.js 15 application is defined as a service under the Docker Compose configuration.
+3. `ollama`: Whi",,,
+47,q57,Who are the authors of the statistical learning approach to RAG fact correction?,"The authors of the statistical learning approach to RAG fact correction are Mei J., Aminul Islam, et al. [1]",,,
+48,q01,"According to the survey report, what were early RAG systems based on?","Early Retrieval-Augmented Generation (RAG) systems were based on simple keyword search and basic similarity methods. These systems compared user queries to document headers and used lexical matching to recognize text. They worked satisfactorily with narrow topics and small datasets, but failed when dealing with noisy or convoluted documents [Source 1].",,,
+49,q22,What does the architecture document mean by a Glass Box AI experience?,"The architecture document refers to a ""Glass Box"" AI experience where MultiModelRAG provides users with visibility into every step of its thought process. Unlike traditional ""Black Box"" systems where users see only their initial query and final response without any intermediate steps, MultiModelRAG utilizes Server-Sent Events (SSE) to stream a live ""Pipeline Execution Path"" to the frontend. This allows users to observe each phase of the agent's reasoning—from rewriting queries, choosing retrieval tools, cross-encoding data, reranking results, and performing hallucination checks—ensuring transp",,,
+50,q43,Why does the system use L2 distance rather than inner product for similarity search?,"The system uses L2 (Euclidean) distance for similarity search instead of Inner Product (IP) due to more stable results. This is supported by [Source 1]. Specifically, [Source 1] states that the system generates normalized embeddings using the MiniLM model, and L2 provides more stable results in such scenarios.",,,
+51,q02,Which two encoding techniques does the report name under machine learning-based RAG?,"The report names two encoding techniques that are used in machine learning-based RAG methods:
+
+1. Dense Passage Retrieval (DPR)
+2. Bi-Encoder architectures (BERT)
+
+These techniques help build systems based on meanings instead of being restricted to keywords, improving the accuracy of RAG outputs. [Source 1]",,,
+52,q21,What future research direction does the report suggest for images and charts?,The report suggests exploring multi-modal RAG for images and charts as a future research direction.,,,
+53,q43,Why does the system use L2 distance rather than inner product for similarity search?,The system uses L2 (Euclidean) distance for similarity search because it provides more stable results for the normalized embeddings generated by the MiniLM model. This is explicitly stated in [Source 1].,,,
+54,q12,Which three context-based agent methods are listed for error detection?,"The three context-based agent methods listed for error detection are:
+
+- Fact-Checking Agent
+- Multi-Source Verification (RAG)
+- Chain-of-Thought (CoT)",,,
+55,q09,What are the structural errors named in the report?,"The report mentions two types of **structural errors**:
+1. Incorrect chunking logic.
+2. Table and metadata misalignment.",,,
+56,q32,How does the reranker reduce context noise for the LLM?,"The reranker reduces context noise for the LLM by re-ranking the top 10 results fetched from FAISS based on semantic relevance to the query. This ensures that only relevant and meaningful chunks are passed to the LLM, preventing it from receiving irrelevant or noisy information. Specifically:
+
+- **Initial Retrieval:** The system fetches Top-10 candidates using FAISS.
+- **Reranking:** These 10 results are scored by the `BGE-Reranker-v2-m3` model.
+- **Final Selection:** Only the top 5 highest-scoring chunks that make sense semantically and are most relevant to the query are passed to the LLM. Th",,,
+57,q12,Which three context-based agent methods are listed for error detection?,"The three context-based agent methods listed for error detection are:
+- Fact-Checking Agent
+- Multi-Source Verification (RAG)
+- Chain-of-Thought (CoT)
+
+These methods were mentioned in [Source 1] and [Source 3]. [Source 5] further elaborates on how these methods can be implemented using custom Python-based agents.",,,
+58,q56,What is a stated con of NLP-based contextual correction for RAG systems?,"The stated con of the NLP-based contextual correction for RAG systems, as described in [Source 2], is that it may not fully incorporate multi-modal validation or user-assisted correction mechanisms. This means the system relies on natural language processing (NLP) techniques to correct LLM-generated text without incorporating additional modalities such as visual or auditory data, nor does it include human intervention for complex corrections.
+
+For a more comprehensive understanding of all mentioned pros and cons across different approaches to RAG error correction, please refer to [Source 1] an",,,
+59,q20,Name two research gaps identified in the survey report.,"Two research gaps identified in the survey report are:
+
+- The foundational RAG approach highlighted by Lewis P., et al. focuses on detecting and augmenting knowledge in generative models using sequence-to-sequence models applied to processed text and document chunks. However, it does not mention any specific gaps or areas where further research is needed.
+- There's no explicit mention of other potential research gaps related to the foundational RAG approach discussed.
+
+[1]",,,
+60,q57,Who are the authors of the statistical learning approach to RAG fact correction?,"The authors of the statistical learning approach to RAG fact correction are Mei J. and Aminul Islam, et al. [1]",,,
