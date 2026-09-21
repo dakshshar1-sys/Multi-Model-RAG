@@ -149,7 +149,8 @@ Each row adds one component to the previous. Answer correctness = contains-gold
 | + cross-encoder rerank (top-10 → 5) | 0.688 | 0.330 | 0.764 | 0.891 | 4.7 |
 | hybrid (BM25 + dense), top-5 | 0.719 | 0.290 | 0.829 | 0.938 | 3.9 |
 | hybrid + rerank (shipped stack) | **0.734** | 0.295 | 0.761 | 0.922 | 4.7 |
-| **full system end-to-end** (router → … → verification) | **0.094** | 0.072 | 0.210 | 0.938 | 18.3 |
+| full system end-to-end, before retrieval-first routing | 0.094 | 0.072 | 0.210 | 0.938 | 18.3 |
+| **full system end-to-end, with retrieval-first routing** | **0.672** | 0.324 | 0.800 | 0.938 | 5.7 |
 
 What each component is worth: retrieval itself +0.61 over the model alone; the reranker
 +0.05; lexical retrieval +0.08 over dense; both together +0.09. The two questions the model
@@ -165,6 +166,12 @@ that as general knowledge. **End-to-end accuracy is bounded by routing, and rout
 knowledge base currently depends on the user saying so.** The fix is retrieval-first
 routing: probe the knowledge base cheaply before choosing a tool, and prefer it when it
 holds a strong match (measured next).
+
+**Measured, same day.** With the probe (fused top-3 scored by the cross-encoder, threshold
+−3.0; medians +4.4 for corpus questions vs −11.0 for web-bound ones), the routing became:
+Search_Knowledge_Base 59, Web_Search 5. End-to-end contains-gold 0.672 (from 0.094); on the questions routed
+to the knowledge base 0.729, against the retrieval stack's 0.734 ceiling. The remaining
+gap to the ceiling is the pipeline's own verification and generation path, not routing.
 
 ## Not yet measured
 
