@@ -83,6 +83,13 @@ def list_documents():
     return {"documents": [{"source": k, **v} for k, v in sorted(counts.items())]}
 
 
+@router.get("/traces/summary")
+def traces_summary(limit: int = 2000, conversation: str | None = None):
+    """Latency distribution over the last N traces: p50/p90/p95 per tool and per stage."""
+    from core.trace_stats import summarize
+    return summarize(orchestrator.trace_log.tail(max(1, min(limit, 100000))), conversation)
+
+
 @router.get("/traces")
 def recent_traces(limit: int = 50):
     """The last N request traces: per-stage timings, tool, cache/degraded flags, totals."""
