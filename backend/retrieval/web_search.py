@@ -279,7 +279,11 @@ def _stagger_ddg():
         _ddg_last_call[0] = time.monotonic()
 
 
-_last_challenge_ts = [0.0]
+# None = never challenged. It must NOT be 0.0: time.monotonic() counts from boot, so on a host
+# that booted less than DEGRADED_WINDOW_S ago "monotonic() - 0.0 < window" is true, and every
+# web answer was labelled degraded (and kept out of the cache) for the first five minutes after
+# a restart with no challenge ever served. Found by CI: a fresh runner is always newly booted.
+_last_challenge_ts: list[float | None] = [None]
 DEGRADED_WINDOW_S = 300
 
 
@@ -289,7 +293,8 @@ def search_is_degraded(window_s: float = DEGRADED_WINDOW_S) -> bool:
     caching it — a headlines-and-encyclopedia answer must not be served for an hour
     as if it were a real search result."""
     import time
-    return (time.monotonic() - _last_challenge_ts[0]) < window_s
+    ts = _last_challenge_ts[0]
+    return ts is not None and (time.monotonic() - ts) < window_s
 
 
 def _search_duckduckgo(query: str, max_results: int = 5) -> list[dict]:

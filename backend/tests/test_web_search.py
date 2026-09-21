@@ -497,7 +497,7 @@ import retrieval.web_search as ws
 
 
 def test_degraded_flag_is_set_by_a_challenge_and_expires(monkeypatch):
-    monkeypatch.setattr(ws, "_last_challenge_ts", [0.0])
+    monkeypatch.setattr(ws, "_last_challenge_ts", [None])
     assert ws.search_is_degraded() is False
     monkeypatch.setattr("retrieval.web_search.requests.get", lambda *a, **k: _FakeResp(202, "text/html", text=CHALLENGE_HTML))
     assert ws._search_duckduckgo("anything") == []
@@ -505,8 +505,25 @@ def test_degraded_flag_is_set_by_a_challenge_and_expires(monkeypatch):
     assert ws.search_is_degraded(window_s=0) is False
 
 
+def test_never_challenged_is_not_degraded_even_seconds_after_boot(monkeypatch):
+    """
+    Regression, found by CI on its first run. time.monotonic() counts from boot. With 0.0 as the
+    "never" value, a host up for less than the window reported every search as degraded: a false
+    rate-limit warning on each web answer, and no caching, for five minutes after every restart.
+    A GitHub runner is always freshly booted, so it failed there and nowhere else.
+    """
+    import time
+    monkeypatch.setattr(ws, "_last_challenge_ts", [None])
+    monkeypatch.setattr(time, "monotonic", lambda: 12.0)          # 12 s after boot
+    assert ws.search_is_degraded() is False
+    monkeypatch.setattr(ws, "_last_challenge_ts", [10.0])          # a real challenge 2 s ago
+    assert ws.search_is_degraded() is True
+    monkeypatch.setattr(time, "monotonic", lambda: 10.0 + ws.DEGRADED_WINDOW_S + 1)
+    assert ws.search_is_degraded() is False, "and it still expires"
+
+
 def test_normal_results_do_not_set_the_flag(monkeypatch):
-    monkeypatch.setattr(ws, "_last_challenge_ts", [0.0])
+    monkeypatch.setattr(ws, "_last_challenge_ts", [None])
     monkeypatch.setattr("retrieval.web_search.requests.get", lambda *a, **k: _FakeResp(200, "text/html", text=RESULTS_HTML))
     assert ws._search_duckduckgo("q")
     assert ws.search_is_degraded() is False
