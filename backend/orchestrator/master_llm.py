@@ -113,6 +113,21 @@ class MasterOrchestrator:
         self.telegram = TelegramClient()
         self.workspace = WorkspaceAgent()
 
+    def kb_relevance(self, query: str) -> float | None:
+        """Best cross-encoder score among the knowledge base's fused top-3 for `query`,
+        or None if the base is empty / the reranker is unavailable. ~0.3-0.5 s on CPU,
+        cheaper than the classifier call it replaces on a hit."""
+        try:
+            docs = self.vector_db.hybrid_retrieve(query, top_k=3)
+            texts = [d.page_content for d in docs if d.page_content and d.page_content.strip()]
+            if not texts or not getattr(self.reranker, "model", None):
+                return None
+            scores = self.reranker.model.predict([(query, t) for t in texts])
+            return float(max(scores))
+        except Exception as e:
+            logger.warning(f"kb_relevance failed: {e}")
+            return None
+
     async def process_query_stream(self, query: str, history: str = "", image_context: str = "", model_choice: str = "auto",
                                    conversation_id: str | None = None) -> AsyncGenerator[str, None]:
         """
@@ -288,11 +303,13 @@ Rewritten:"""
         tool = "Search_Knowledge_Base"
         try:
             from models.agentic_router import AgentRouter
-            router = AgentRouter()
+            router = AgentRouter(kb_probe=self.kb_relevance)
             # Pass the RAW user words too: the deterministic fast-path keys off the user's
             # literal request ("make a folder ... rng.py"), never the history-rewritten
             # query, so a file task can't be biased into a message by prior chat context.
             tool = await asyncio.to_thread(router.route_query, search_query, model_choice, query)
+            if getattr(router, "last_probe_score", None) is not None and tool == "Search_Knowledge_Base":
+                yield emit("Agent Router", "Completed", f"Knowledge base holds a strong match (relevance {router.last_probe_score:.1f}) — answering from your documents")
             yield emit("Agent Router", "Completed", f"Selected Tool: [{tool}]")
         except Exception as e:
             logger.error(f"Agent Router exception: {e}")

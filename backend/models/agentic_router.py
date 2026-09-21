@@ -32,6 +32,11 @@ _KB_RE = re.compile(r"\b(?:my|the|our) (?:uploaded|ingested|indexed) (?:document
 _CHART_RE = re.compile(r"\b(?:chart|plot|graph|visuali[sz]e|bar chart|line chart|pie chart)\b", re.I)
 _NUM_RE = re.compile(r"\d[\d,\.]*")
 _GREETING_RE = re.compile(r"^\s*(?:hi|hello|hey|yo|good (?:morning|afternoon|evening)|thanks|thank you|how are you|what can you do|what are you able to)\b", re.I)
+# Asks for something current: the knowledge base may hold older text on the topic
+# (crawled news), but the user wants now. These bypass the knowledge-base probe.
+_LIVE_INTENT_RE = re.compile(r"\b(?:current(?:ly)?|latest|today|tonight|tomorrow|yesterday|now|right now|this (?:week|month|year)|live|breaking|news|price|weather|forecast|score|stock|exchange rate|who won|when is the next)\b", re.I)
+KB_PROBE_THRESHOLD = float(__import__("os").getenv("KB_PROBE_THRESHOLD", "-3.0"))
+
 _TASK_WORD_RE = re.compile(r"\b(?:search|find|look up|email|mail|message|chart|plot|file|folder|image|photo|weather|news|price|stock|revenue|document|pdf|summari[sz]e|translate)\b", re.I)
 
 class AgentRouter:
@@ -42,9 +47,16 @@ class AgentRouter:
     2. Search_Knowledge_Base: Existing ingested corpus
     3. Direct_Chat: Casual conversation
     """
-    def __init__(self, model_name: str = None):
+    def __init__(self, model_name: str = None, kb_probe=None):
         # Prioritize Gemini for accurate classification
         self.llm = DualLLM(llama_model=model_name)
+        # Retrieval-first routing. kb_probe(query) -> best cross-encoder score of the
+        # knowledge base's top candidates, or None. Measured on 64 corpus questions vs
+        # 15 web-bound ones: medians +4.4 vs -11.0; at -3 the probe routes 94% of corpus
+        # questions to the knowledge base and 0% of web questions. Without it, reader-
+        # style questions ("according to the report, ...") went to web search 57/64 times.
+        self.kb_probe = kb_probe
+        self.last_probe_score = None
         
         self.prompt_template = PromptTemplate(
             input_variables=["query"],
@@ -123,6 +135,19 @@ Tool Selection:'''
         if forced:
             logger.info(f"Router fast-path matched -> {forced}")
             return forced
+
+        # Retrieval-first: if the knowledge base holds a strong match and the user is
+        # not asking for something current, use it — no classifier call needed.
+        self.last_probe_score = None
+        if self.kb_probe and not _LIVE_INTENT_RE.search(raw_query or query):
+            try:
+                score = self.kb_probe(raw_query or query)
+                self.last_probe_score = score
+                if score is not None and score >= KB_PROBE_THRESHOLD:
+                    logger.info(f"Router: knowledge base holds a strong match (score {score:.2f}) -> Search_Knowledge_Base")
+                    return "Search_Knowledge_Base"
+            except Exception as e:
+                logger.warning(f"Knowledge-base probe failed ({e}); falling back to the classifier.")
 
         try:
             prompt = self.prompt_template.format(query=query)
