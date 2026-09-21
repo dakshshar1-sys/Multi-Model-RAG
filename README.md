@@ -48,6 +48,19 @@ Advanced multi-agent pipeline with:
 - **PDF/Text Upload**: Index and search local documents
 - **Web Crawler**: Deep-crawl entire websites for custom knowledge bases
 
+## 📏 Evaluation & reproducibility
+
+Every claim about this system has a number behind it, and one command reproduces them:
+
+```bash
+docker exec -w /app multimodelrag-backend-1 sh eval/run_all.sh
+```
+
+- [`backend/eval/BASELINE.md`](backend/eval/BASELINE.md) — dated results: routing, retrieval (dense / hybrid / rerank), answer correctness, the whole-pipeline ablation, latency.
+- [`backend/eval/FAILURE_ANALYSIS.md`](backend/eval/FAILURE_ANALYSIS.md) — generated appendix of the system's actual failures.
+- [`backend/eval/README.md`](backend/eval/README.md) — the harness, its datasets and metrics; [`INDEPENDENT_PROTOCOL.md`](backend/eval/datasets/INDEPENDENT_PROTOCOL.md) for the independent question set; `python -m eval.human_eval` for blind human ratings.
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — the pipeline as it actually is, with a diagram drawn from the modules.
+
 ## 🏗️ Architecture
 
 ```
