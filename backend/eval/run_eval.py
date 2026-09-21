@@ -109,13 +109,13 @@ def _retriever(db, mode: str):
     return {"dense": db.retrieve, "bm25": db.bm25_retrieve, "hybrid": db.hybrid_retrieve}[mode]
 
 
-def eval_retrieval(top_k_initial: int, top_k_final: int, use_rerank: bool, limit: int | None, mode: str = "dense") -> dict:
+def eval_retrieval(top_k_initial: int, top_k_final: int, use_rerank: bool, limit: int | None, mode: str = "dense", dataset: str = "qa") -> dict:
     db = _eval_db()
     reranker = None
     if use_rerank:
         from retrieval.reranker import RerankerModel
         reranker = RerankerModel()
-    qa = load_jsonl("qa.jsonl", limit)
+    qa = load_jsonl(f"{dataset}.jsonl", limit)
     retrieve = _retriever(db, mode)
     rows = []
     for q in qa:
@@ -158,7 +158,7 @@ def eval_retrieval(top_k_initial: int, top_k_final: int, use_rerank: bool, limit
 # ── answers ────────────────────────────────────────────────────────────────
 
 async def eval_answers(top_k_initial: int, top_k_final: int, use_rerank: bool, judge: bool,
-                       limit: int | None, model_choice: str, mode: str = "dense") -> dict:
+                       limit: int | None, model_choice: str, mode: str = "dense", dataset: str = "qa") -> dict:
     from models.generation import GenerationModel
     db = _eval_db()
     reranker = None
@@ -170,7 +170,7 @@ async def eval_answers(top_k_initial: int, top_k_final: int, use_rerank: bool, j
     if judge:
         from verification.verifier import VerificationModule
         verifier = VerificationModule()
-    qa = load_jsonl("qa.jsonl", limit)
+    qa = load_jsonl(f"{dataset}.jsonl", limit)
     retrieve = _retriever(db, mode)
     rows = []
     for q in qa:
@@ -242,6 +242,7 @@ def main():
     ap.add_argument("--limit", type=int, default=None, help="only the first N qa items (quick runs)")
     ap.add_argument("--model", default="auto", help="model_choice for LLM calls: auto|local|api|claude")
     ap.add_argument("--label", default="run", help="name for the results file / history line")
+    ap.add_argument("--dataset", default="qa", help="qa (author-written) or qa_independent (written from headings by people who have not read the corpus)")
     args = ap.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -253,10 +254,10 @@ def main():
     if args.suite in ("routing", "all"):
         results["routing"] = eval_routing(args.runs, args.model)
     if args.suite in ("retrieval", "all"):
-        results["retrieval"] = eval_retrieval(args.top_k_initial, args.top_k, not args.no_rerank, args.limit, args.retrieval)
+        results["retrieval"] = eval_retrieval(args.top_k_initial, args.top_k, not args.no_rerank, args.limit, args.retrieval, args.dataset)
     if args.suite in ("answers", "all"):
         results["answers"] = asyncio.run(eval_answers(args.top_k_initial, args.top_k, not args.no_rerank,
-                                                      args.judge, args.limit, args.model, args.retrieval))
+                                                      args.judge, args.limit, args.model, args.retrieval, args.dataset))
     results["elapsed_s"] = round(time.time() - t0, 1)
 
     os.makedirs(RESULTS, exist_ok=True)

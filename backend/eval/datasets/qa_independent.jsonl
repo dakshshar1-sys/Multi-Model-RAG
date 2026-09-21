@@ -1,0 +1,3 @@
+# One line per question. Fields: id, source, question (verbatim from the writer), gold_answer (null if unanswerable),
+# gold_evidence (short verbatim substring), author (initials of the writer), reviewed (true once the author checked it).
+# See INDEPENDENT_PROTOCOL.md. Lines starting with # are ignored by the runner.
