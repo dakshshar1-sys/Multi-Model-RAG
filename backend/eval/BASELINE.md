@@ -137,6 +137,35 @@ Generation is now the floor: ~6 s for a 150-word knowledge-base answer on qwen2.
 The next lever would be a leaner analytical template (fewer mandated sections), which is
 a product decision, not an optimisation.
 
+## Whole-pipeline ablation — 2026-09-21 (64 questions, `python -m eval.ablation`)
+
+Each row adds one component to the previous. Answer correctness = contains-gold
+(≥80% of the gold answer's content tokens present in the answer).
+
+| configuration | contains-gold | token-F1 | lexical support | evidence in context | s/answer |
+|---|---|---|---|---|---|
+| model alone (no retrieval) | 0.031 | 0.070 | – | – | 1.7 |
+| dense retrieval, top-5 | 0.641 | 0.264 | 0.702 | 0.781 | 4.0 |
+| + cross-encoder rerank (top-10 → 5) | 0.688 | 0.330 | 0.764 | 0.891 | 4.7 |
+| hybrid (BM25 + dense), top-5 | 0.719 | 0.290 | 0.829 | 0.938 | 3.9 |
+| hybrid + rerank (shipped stack) | **0.734** | 0.295 | 0.761 | 0.922 | 4.7 |
+| **full system end-to-end** (router → … → verification) | **0.094** | 0.072 | 0.210 | 0.938 | 18.3 |
+
+What each component is worth: retrieval itself +0.61 over the model alone; the reranker
++0.05; lexical retrieval +0.08 over dense; both together +0.09. The two questions the model
+answered without retrieval (q03, q61) are the ones whose answers are general knowledge.
+
+**The end-to-end row is the finding.** The real system got 0.094 not because generation
+failed but because the router sent 57 of 64 questions to web search (2 to the inbox,
+1 to clarification, 4 to the knowledge base). On the 4 it did send to the knowledge base
+it scored 0.75, in line with the ladder. The questions are phrased the way a reader asks
+("according to the survey report, what were early RAG systems based on?") with no
+"my uploaded documents" cue, and both the classifier and the deterministic fast path treat
+that as general knowledge. **End-to-end accuracy is bounded by routing, and routing to the
+knowledge base currently depends on the user saying so.** The fix is retrieval-first
+routing: probe the knowledge base cheaply before choosing a tool, and prefer it when it
+holds a strong match (measured next).
+
 ## Not yet measured
 
 - Latency distribution over many requests (traces.jsonl accumulates; one request is not a benchmark).
