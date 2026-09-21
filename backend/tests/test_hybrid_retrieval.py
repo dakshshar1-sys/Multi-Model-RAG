@@ -58,6 +58,7 @@ def db(tmp_path):
     return d
 
 
+@pytest.mark.needs_ml
 def test_hybrid_finds_the_exact_term_chunk_and_returns_documents(db):
     docs = db.hybrid_retrieve("what does the verifier flag if it sees $40B instead of $100B?", top_k=2)
     assert docs and docs[0].metadata["source"] == "c"
@@ -65,12 +66,14 @@ def test_hybrid_finds_the_exact_term_chunk_and_returns_documents(db):
     assert lex[0].metadata["source"] == "b"
 
 
+@pytest.mark.needs_ml
 def test_hybrid_never_returns_duplicates_and_respects_top_k(db):
     docs = db.hybrid_retrieve("retrieval errors and enterprise documents", top_k=3)
     texts = [d.page_content for d in docs]
     assert len(texts) == len(set(texts)) and len(docs) <= 3
 
 
+@pytest.mark.needs_ml
 def test_lexical_index_tracks_adds_and_deletes(db):
     from langchain_core.documents import Document
     assert len(db._ensure_bm25()) == 4

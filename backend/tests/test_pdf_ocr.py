@@ -34,6 +34,7 @@ TECHNICAL = ("FastAPI was chosen for its asynchronous capabilities, essential fo
 
 # ── quality signal ──────────────────────────────────────────────────────────
 
+@pytest.mark.needs_ml
 def test_known_word_ratio_separates_garbage_from_text():
     g, _ = known_word_ratio(GARBAGE)
     p, _ = known_word_ratio(GOOD)
@@ -45,6 +46,7 @@ def test_known_word_ratio_separates_garbage_from_text():
     assert g < QUALITY_THRESHOLD < p
 
 
+@pytest.mark.needs_ml
 def test_page_decisions():
     assert page_needs_ocr(GARBAGE)[0] is True
     assert page_needs_ocr("")[0] is True
@@ -92,6 +94,7 @@ def test_image_only_pdf_has_no_text_layer_and_renders():
     assert rendered[0][1].size[0] > 500
 
 
+@pytest.mark.needs_ml
 def test_extract_pages_ocrs_bad_pages_and_keeps_good_ones(monkeypatch):
     pdf = _image_only_pdf(["x"], pages=3)
     ocr_calls = []
@@ -105,6 +108,7 @@ def test_extract_pages_ocrs_bad_pages_and_keeps_good_ones(monkeypatch):
     assert report.mean_ratio_after > report.mean_ratio_before
 
 
+@pytest.mark.needs_ml
 def test_ocr_unavailable_keeps_layer_and_reports_failure(monkeypatch):
     pdf = _image_only_pdf(["x"], pages=1)
     monkeypatch.setattr(pdf_ocr, "ocr_image", lambda img: "")
@@ -136,6 +140,7 @@ def test_real_ocr_reads_a_printed_scan():
 
 # ── delete_by_source ────────────────────────────────────────────────────────
 
+@pytest.mark.needs_ml
 def test_delete_by_source_removes_only_that_file(tmp_path):
     from langchain_core.documents import Document
     from retrieval.vector_db import VectorDatabase
