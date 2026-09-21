@@ -15,7 +15,12 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from orchestrator.master_llm import looks_like_clarification
+# The orchestrator imports the retrieval stack at module level, so even this pure-function
+# test cannot be collected without the ML runtime. Skip the module, visibly, when it is absent.
+pytest.importorskip("sentence_transformers", reason="needs the ML runtime; runs in the backend container")
+pytest.importorskip("faiss", reason="needs the ML runtime; runs in the backend container")
+
+from orchestrator.master_llm import looks_like_clarification  # noqa: E402
 
 ORIG = "chart Samsung's 2025 revenue by quarter"
 

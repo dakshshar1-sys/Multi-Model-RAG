@@ -10,6 +10,8 @@ Run:  cd backend && python -m pytest tests/test_conversation_state.py -v
 import os
 import sys
 
+import pytest
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.conversation_state import DEFAULT_ID, ConversationStore
@@ -65,6 +67,7 @@ def test_cap_evicts_least_recently_used():
     assert set(store._states) == {"a", "c", "d"}
 
 
+@pytest.mark.needs_ml
 def test_orchestrator_signature_accepts_conversation_id():
     import inspect
     import orchestrator.master_llm as m
