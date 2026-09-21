@@ -34,6 +34,8 @@ def test_summary_groups_by_tool_and_stage_and_excludes_cache_hits_from_timing():
     assert gen["n"] == 3 and gen["share_of_uncached_time"] == round(23000 / 50000, 3)
     assert list(s["by_stage"])[0] == "Generation", "stages are ordered by share of time"
     assert s["verification"] == {"pass": 1, "flagged": 1, "not run": 2}
+    assert s["abstained_rate"] == 0.0
+    assert summarize([_t("Search_Knowledge_Base", 900, abstained=True), _t("Search_Knowledge_Base", 9000)])["abstained_rate"] == 0.5
 
 
 def test_conversation_filter_and_empty_input():

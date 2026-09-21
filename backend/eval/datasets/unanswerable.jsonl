@@ -1,0 +1,27 @@
+# Questions the evaluation corpus CANNOT answer. "near" = phrased like a corpus question, on-topic vocabulary, but the fact is absent;
+# "far" = nothing to do with the corpus. absent_terms are checked against the corpus by tests/test_abstention.py, so a corpus edit that
+# makes one answerable fails loudly. The correct behaviour for every line is to say the documents do not contain it.
+{"id": "u01", "kind": "near", "question": "What is the total project budget stated in the chapter report?", "absent_terms": ["budget"]}
+{"id": "u02", "kind": "near", "question": "Which Kubernetes configuration does the architecture document describe for deployment?", "absent_terms": ["kubernetes"]}
+{"id": "u03", "kind": "near", "question": "What BLEU score does the report give for the generation model?", "absent_terms": ["bleu"]}
+{"id": "u04", "kind": "near", "question": "What ROUGE-L score did the summarisation evaluation achieve according to the survey report?", "absent_terms": ["rouge"]}
+{"id": "u05", "kind": "near", "question": "How many participants took part in the user study described in the report?", "absent_terms": ["participants"]}
+{"id": "u06", "kind": "near", "question": "Under which open-source license is the system released, per the architecture document?", "absent_terms": ["license", "licence"]}
+{"id": "u07", "kind": "near", "question": "Which speech-to-text model does the system use for voice input?", "absent_terms": ["speech", "whisper"]}
+{"id": "u08", "kind": "near", "question": "What JWT expiry time does the API chapter specify for authentication tokens?", "absent_terms": ["jwt"]}
+{"id": "u09", "kind": "near", "question": "Which Android version does the mobile client require?", "absent_terms": ["android"]}
+{"id": "u10", "kind": "near", "question": "What LoRA rank was used to fine-tune the local model?", "absent_terms": ["lora"]}
+{"id": "u11", "kind": "near", "question": "What quantization level does the document say the Llama model runs at?", "absent_terms": ["quantiz", "quantis"]}
+{"id": "u12", "kind": "near", "question": "Who is named as the project supervisor in the chapter report?", "absent_terms": ["supervisor"]}
+{"id": "u13", "kind": "near", "question": "What is the deadline for the final submission mentioned in the report?", "absent_terms": ["deadline"]}
+{"id": "u14", "kind": "near", "question": "What GDPR compliance measures does the architecture document describe?", "absent_terms": ["gdpr"]}
+{"id": "u15", "kind": "near", "question": "Which PostgreSQL version stores the user accounts?", "absent_terms": ["postgres"]}
+{"id": "u16", "kind": "near", "question": "What nginx reverse-proxy settings does the deployment section list?", "absent_terms": ["nginx"]}
+{"id": "u17", "kind": "near", "question": "What level of Hindi language support does the system provide?", "absent_terms": ["hindi"]}
+{"id": "u18", "kind": "near", "question": "What does the Gantt chart in the report show for the testing phase?", "absent_terms": ["gantt"]}
+{"id": "u19", "kind": "near", "question": "Why did the authors choose Weaviate over FAISS?", "absent_terms": ["weaviate"]}
+{"id": "u20", "kind": "near", "question": "How many A100 GPUs were used to train the reranker?", "absent_terms": ["a100"]}
+{"id": "u21", "kind": "far", "question": "What is the boiling point of ethanol in degrees Celsius?", "absent_terms": ["ethanol"]}
+{"id": "u22", "kind": "far", "question": "Who won the 2018 FIFA World Cup?", "absent_terms": ["fifa"]}
+{"id": "u23", "kind": "far", "question": "How many bones are there in the adult human body?", "absent_terms": ["bones"]}
+{"id": "u24", "kind": "far", "question": "What is the capital city of Mongolia?", "absent_terms": ["mongolia"]}

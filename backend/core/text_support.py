@@ -72,3 +72,27 @@ def token_f1(prediction: str, gold: str) -> float:
         return 0.0
     precision, recall = overlap / len(p), overlap / len(g)
     return 2 * precision * recall / (precision + recall)
+
+
+# ── abstention ───────────────────────────────────────────────────────────────
+# Did the answer decline, rather than assert? Used by the abstention evaluation and by the
+# knowledge-base answer gate's tests. Heuristic by design: it looks only at the opening of
+# the answer, because an answer that opens with a claim and hedges later has still asserted.
+_ABSTAIN_RE = re.compile(
+    r"\b(?:"
+    r"(?:does|do|did)(?:\s+not|n['’]t)\s+(?:contain|mention|provide|specify|include|state|discuss|address|cover|give|list|describe|name|say|appear|indicate|reference)"
+    r"|(?:is|are|was|were)(?:\s+not|n['’]t)\s+(?:mentioned|provided|specified|stated|available|included|found|discussed|covered|given|listed|described|named|present|addressed|indicated|referenced)"
+    r"|not\s+(?:explicitly\s+)?(?:mentioned|provided|specified|stated|available|included|found|discussed|covered|given|listed|described|named|addressed|indicated)"
+    r"|no\s+(?:\w+\s+){0,2}(?:information|mention|details?|data|reference|indication|record|evidence|relevant context)"
+    r"|(?:cannot|can['’]?t|could\s+not|couldn['’]t|unable\s+to)\s+(?:find|answer|determine|provide|locate|confirm|identify)"
+    r"|i\s+(?:do\s+not|don['’]t)\s+know"
+    r"|(?:no\s+one|nobody|none\s+of\s+the\s+(?:sources?|documents?|context))\s+(?:is|are|was|were|has|have|\w+s)\b"
+    r"|(?:documents?|context|sources?|knowledge base)\s+(?:do(?:es)?\s+not|don['’]t|doesn['’]t|lacks?)"
+    r"|outside\s+the\s+(?:scope|provided)"
+    r")", re.I)
+ABSTENTION_WINDOW = 320
+
+
+def is_abstention(answer: str, window: int = ABSTENTION_WINDOW) -> bool:
+    """True when the opening of `answer` says the information is not available."""
+    return bool(_ABSTAIN_RE.search((answer or "")[:window]))
