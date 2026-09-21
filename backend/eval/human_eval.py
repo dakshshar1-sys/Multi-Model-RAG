@@ -33,8 +33,8 @@ COLS = ["row", "id", "question", "answer", "correctness_1_5", "groundedness_1_5"
 
 
 def _latest(prefix):
-    fs = sorted(glob.glob(os.path.join(RESULTS, f"{prefix}_*.json")), key=os.path.getmtime)
-    return json.load(open(fs[-1], encoding="utf-8")) if fs else None
+    from eval.results_io import latest_result
+    return latest_result(prefix, RESULTS)
 
 
 def make_sheet(n: int, configs: list[str], seed: int = 7) -> tuple[list[dict], dict]:

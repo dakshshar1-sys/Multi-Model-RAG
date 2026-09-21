@@ -9,6 +9,13 @@
 # dominate). Results land in eval/results/ and one line per run in results/history.md.
 set -e
 LABEL="${1:-repro}"
+# Greedy decoding for evaluation. With the model's default sampling, 12-16% of answers change verdict
+# between two runs of the IDENTICAL system; at temperature 0 it is 1-2% (eval/SIGNIFICANCE.md, section 3),
+# so a difference between two runs means a difference between two systems. BASELINE.md's original figures
+# were sampled and will differ from a greedy re-run by a few questions. Production is unaffected: this
+# variable is unset there. To sample here too: OLLAMA_TEMPERATURE=0.8 sh eval/run_all.sh
+export OLLAMA_TEMPERATURE="${OLLAMA_TEMPERATURE:-0}"
+echo "== decoding temperature for this run: $OLLAMA_TEMPERATURE =="
 cd "$(dirname "$0")/.."
 echo "== index ==";        python -B -W ignore -m eval.build_index
 echo "== routing ==";      python -B -W ignore -m eval.run_eval --suite routing --runs 3 --label "routing_$LABEL" | grep -E '^\|'
@@ -17,6 +24,7 @@ echo "== retrieval ==";    for m in dense hybrid; do python -B -W ignore -m eval
 echo "== answers ==";      python -B -W ignore -m eval.run_eval --suite answers --judge --retrieval hybrid --label "answers_$LABEL" | grep -E '^\|'
 echo "== ablation ==";     python -B -W ignore -m eval.ablation --label "$LABEL" | grep -E '^\|'
 echo "== abstention ==";   python -B -W ignore -m eval.abstention --label "$LABEL" | grep -E '^\|'
+echo "== significance ==";  python -B -W ignore -m eval.significance
 echo "== appendix ==";     python -B -W ignore -m eval.failure_analysis
 echo "== latency ==";      python -B -W ignore -m eval.latency_report
 echo "done: see eval/results/history.md and eval/FAILURE_ANALYSIS.md"

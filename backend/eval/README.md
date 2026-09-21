@@ -62,3 +62,29 @@ other tools that still produce the right outcome because a deterministic guard i
 orchestrator redirects them (e.g. `Visualize_Data` with no numbers in the message is sent
 to `Web_Search`). The runner reports **strict** accuracy (router alone) and **effective**
 accuracy (router plus guards). The gap between them is the value of the guards.
+
+## Is a difference real? (`python -m eval.significance`)
+
+Point estimates on 64 questions are not enough: one question is 1.6 points, and generation is sampled.
+`eval/significance.py` reads the per-question results already on disk (no model calls) and writes
+[`SIGNIFICANCE.md`](SIGNIFICANCE.md): a Wilson 95% interval per configuration, an exact McNemar test and a
+paired-bootstrap interval for every component comparison, the number of questions that *would* settle each
+undecided comparison, and the noise floor from running the identical configuration repeatedly.
+
+What it established, as of 2026-09-21:
+
+- **Proven (p < 0.05):** retrieval vs the model alone; hybrid vs dense *measured at retrieval* (recall@5
+  0.781 → 0.938, 10 gained, 0 lost); the routing fix end to end (0.094 → 0.672).
+- **Not proven at n = 64:** every answer-level component gain (reranker, hybrid, the whole stack vs dense,
+  qwen vs llama). They point the right way; the set is too small. About 260–280 questions would settle
+  hybrid and the whole stack; the reranker's answer-level effect is too small to chase.
+- **Why:** with default sampling, 12–16% of answers change verdict between two runs of the *identical*
+  system. That is as large as the effects being measured.
+- **Remedy, measured:** `OLLAMA_TEMPERATURE=0` (greedy decoding) cuts verdict flips to 1 of 64 and makes
+  87.5% of answers character-identical between runs. `run_all.sh` now sets it; production does not.
+  Greedy answers were also 18% shorter and 40% faster with higher token-F1 (0.35 vs 0.30) and no
+  significant accuracy change (p 0.39) — whether production should lower its temperature is a product
+  question for the human evaluation, not something this metric can decide.
+
+Report retrieval changes at the retrieval level (recall@k has no generation noise); report answer-level
+changes only from greedy runs, with the McNemar p-value beside them.

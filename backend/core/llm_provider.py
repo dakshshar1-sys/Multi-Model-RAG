@@ -14,6 +14,23 @@ logger = logging.getLogger(__name__)
 # inherit this, so LLM_MODEL in the environment actually takes effect.
 DEFAULT_LLAMA_MODEL = os.getenv("LLM_MODEL") or "llama3.2"
 
+def _sampling_overrides() -> dict:
+    """
+    OLLAMA_TEMPERATURE, when set, overrides the model's default sampling temperature. Unset (the
+    default) changes nothing. Evaluation runs set it to 0 for greedy decoding: measured on the
+    evaluation set, 12-16% of answers changed verdict between two runs of the IDENTICAL sampled
+    system, which is as large as most of the component gains being measured (eval/SIGNIFICANCE.md).
+    """
+    raw = os.getenv("OLLAMA_TEMPERATURE", "").strip()
+    if not raw:
+        return {}
+    try:
+        return {"temperature": max(0.0, float(raw))}
+    except ValueError:
+        logger.warning(f"Ignoring OLLAMA_TEMPERATURE={raw!r}: not a number.")
+        return {}
+
+
 class DualLLM:
     """
     A wrapper that prioritizes Gemini API and falls back to Local Llama (Ollama)
@@ -53,6 +70,7 @@ class DualLLM:
             model=self.llama_model, base_url=base_url, num_ctx=num_ctx,
             keep_alive=os.getenv("OLLAMA_KEEP_ALIVE", "30m"),
             num_predict=int(os.getenv("OLLAMA_NUM_PREDICT", "512")),
+            **_sampling_overrides(),
         )
 
         # Initialize Gemini if key exists and is not a placeholder
