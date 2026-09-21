@@ -16,10 +16,23 @@ _FILE_EXT_RE = re.compile(
     re.I,
 )
 _FILE_NOUN_RE = re.compile(r"\b(folder|directory|sub-?folder|script|program)\b", re.I)
-_CREATE_RE = re.compile(r"\b(make|create|write|generate|build|save|scaffold|code up)\b", re.I)
+_CREATE_RE = re.compile(r"\b(make|create|write|generate|build|save|scaffold|code up|add|edit|update|modify|append|remove|delete|rename|replace|change|put|insert)\b", re.I)
 # If any of these appear, we do NOT force Workspace_Task — let the LLM decide, so a
 # genuine "email Ali the config.py" isn't hijacked into writing a file.
 _SEND_RE = re.compile(r"\b(e-?mail|mail|whats-?app|telegram|text|message|dm|send)\b", re.I)
+
+# ── deterministic intents (see _fast_route) ──
+_SEND_EMAIL_RE = re.compile(r"^\s*(?:please\s+|can you\s+|could you\s+)?(?:(?:e-?mail|mail|send (?:an?\s+)?(?:e-?mail|mail) to)\s+(?!me\b)[A-Za-z]|send\s+(?!me\b)[A-Za-z]+\s+(?:an?\s+)?(?:e-?mail|mail)\b)", re.I)
+_SEND_MSG_RE = re.compile(r"^\s*(?:please\s+|can you\s+|could you\s+)?(?:(?:message|text|telegram|whats-?app|dm|ping|send (?:a\s+)?(?:message|text|telegram|whats-?app) to)\s+(?!me\b)[A-Za-z]|send\s+(?!me\b)[A-Za-z]+\s+(?:a\s+)?(?:message|text|telegram|whats-?app)\b)", re.I)
+_IMAGE_REF_RE = re.compile(r"\b(?:this|the|that|my|uploaded|attached)\s+(?:image|photo|picture|screenshot|pic)\b|\bimage I uploaded\b", re.I)
+_INBOX_RE = re.compile(r"\b(?:unread|inbox|latest (?:e-?)?mails?|new (?:e-?)?mails?|(?:e-?)?mails? (?:from|about)|check (?:my )?(?:e-?)?mail)\b", re.I)
+# "what did X email me about ..." is a read; "email me the summary" is a send-to-self and stays with the model.
+_INBOX_Q_RE = re.compile(r"\b(?:did|has|have|what|who|anyone|anybody|which|any)\b[^?]*\b(?:e-?)?mail(?:ed)? me\b", re.I)
+_KB_RE = re.compile(r"\b(?:my|the|our) (?:uploaded|ingested|indexed) (?:documents?|docs?|notes?|files?|reports?|pdfs?)\b|\b(?:documents?|report|pdf|notes?) (?:I|we) (?:uploaded|ingested|indexed)\b|\bknowledge base\b|\bin my (?:documents?|notes?|files)\b|\bfrom my (?:documents?|notes?|files)\b", re.I)
+_CHART_RE = re.compile(r"\b(?:chart|plot|graph|visuali[sz]e|bar chart|line chart|pie chart)\b", re.I)
+_NUM_RE = re.compile(r"\d[\d,\.]*")
+_GREETING_RE = re.compile(r"^\s*(?:hi|hello|hey|yo|good (?:morning|afternoon|evening)|thanks|thank you|how are you|what can you do|what are you able to)\b", re.I)
+_TASK_WORD_RE = re.compile(r"\b(?:search|find|look up|email|mail|message|chart|plot|file|folder|image|photo|weather|news|price|stock|revenue|document|pdf|summari[sz]e|translate)\b", re.I)
 
 class AgentRouter:
     """
@@ -58,12 +71,40 @@ Tool Selection:'''
         
     @staticmethod
     def _fast_route(query: str) -> str | None:
-        """High-precision keyword rule for the clearest intents. Returns a tool or None."""
-        if _SEND_RE.search(query):
-            return None  # any messaging cue -> let the LLM judge, don't force a file write
-        mentions_file = bool(_FILE_EXT_RE.search(query)) or bool(_FILE_NOUN_RE.search(query))
-        if mentions_file and _CREATE_RE.search(query):
+        """
+        Deterministic routing for unmistakable intents. Returns a tool or None.
+
+        Each rule saves a ~1 s classifier call and, unlike the sampled 3B model,
+        gives the same answer every time. Rules are ordered so a send beats a read
+        ("email me" vs "email Ali") and a send beats a file write ("email Ali the
+        config.py"). Anything not unmistakable falls through to the model.
+        """
+        q = (query or "").strip()
+        words = q.lower().split()
+        if not words:
+            return None
+        if _SEND_EMAIL_RE.match(q):
+            return "Send_Email"
+        if _SEND_MSG_RE.match(q):
+            return "Send_Telegram"
+        # The file rule must never fire on a message that mentions sending ("email Ali
+        # the config.py"); other rules below still get their turn.
+        mentions_send = bool(_SEND_RE.search(q))
+        mentions_file = bool(_FILE_EXT_RE.search(q)) or bool(_FILE_NOUN_RE.search(q))
+        if mentions_file and _CREATE_RE.search(q) and not mentions_send:
             return "Workspace_Task"
+        if _IMAGE_REF_RE.search(q):
+            return "Vision_Analysis"
+        if _INBOX_RE.search(q) or _INBOX_Q_RE.search(q):
+            return "Read_Email"
+        if _KB_RE.search(q):
+            return "Search_Knowledge_Base"
+        if _CHART_RE.search(q) and len(_NUM_RE.findall(q)) >= 2:
+            return "Visualize_Data"
+        if _GREETING_RE.match(q) and len(words) <= 12 and not _TASK_WORD_RE.search(q):
+            return "Direct_Chat"
+        if len(words) <= 2 and not _CHART_RE.search(q) and not _GREETING_RE.match(q):
+            return "Ambiguous_Query"
         return None
 
     def route_query(self, query: str, model_choice: str = "auto", raw_query: str = None) -> str:

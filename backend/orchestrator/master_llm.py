@@ -10,7 +10,7 @@ from retrieval.reranker import RerankerModel
 from models.generation import GenerationModel
 from verification.verifier import VerificationModule
 from retrieval.visualizer import VisualizerAgent
-from retrieval.web_search import search_web, parse_query_list, build_search_queries, merge_search_results, series_from_context, search_is_degraded
+from retrieval.web_search import search_web, parse_query_list, build_search_queries, merge_search_results, series_from_context, search_is_degraded, period_queries
 from core.memory_manager import NotebookMemory
 from core.persona_memory import AgentPersonaMemory
 from utils.cache import ResponseCache
@@ -640,13 +640,18 @@ Rewritten:"""
             try:
                 # ─── Multi-Query Generation ───
                 # Generate variations to improve coverage
-                expansion_prompt = f"Generate 3 diverse search queries to thoroughly answer this request: '{search_query}'. Return ONLY a JSON list of strings."
-                try:
-                    exp_raw = self.generator.llm.invoke(expansion_prompt, model_choice=model_choice).strip()
-                    expansions = parse_query_list(exp_raw)
-                except Exception as e:
-                    logger.warning(f"Query expansion failed ({e}); using the base queries only.")
-                    expansions = []
+                expansions = []
+                if period_queries(query):
+                    # A series request already gets one deterministic search per period;
+                    # the model's generic expansions add a call and no coverage.
+                    logger.info("Series request: skipping LLM query expansion (per-period queries cover it).")
+                else:
+                    expansion_prompt = f"Generate 3 diverse search queries to thoroughly answer this request: '{search_query}'. Return ONLY a JSON list of strings."
+                    try:
+                        exp_raw = self.generator.llm.invoke(expansion_prompt, model_choice=model_choice).strip()
+                        expansions = parse_query_list(exp_raw)
+                    except Exception as e:
+                        logger.warning(f"Query expansion failed ({e}); using the base queries only.")
 
                 # The user's literal words are always searched first (see build_search_queries):
                 # the history-rewrite can turn a request into a question aimed at the user,
@@ -743,7 +748,7 @@ Rewritten:"""
                             logger.error(f"Visualizer failed: {e}")
                             return None
                             
-                    verify_task = asyncio.create_task(self.verifier.verify(answer, gen_context, model_choice=model_choice))
+                    verify_task = asyncio.create_task(self.verifier.verify_fast(answer, gen_context, model_choice=model_choice))
                     visualize_task = asyncio.create_task(safe_visualize())
                     
                     is_valid_data, current_chart_filename = await asyncio.gather(verify_task, visualize_task)
@@ -821,7 +826,7 @@ Rewritten:"""
         yield emit("Vector Retrieval", "Completed", f"Retrieved {len(docs)} relevant chunks from database")
 
         yield emit("Reranking Model", "Processing", "Cross-encoding query and documents to filter relevance")
-        ranked_docs = self.reranker.rerank(search_query, doc_texts, top_k=5)
+        ranked_docs = await asyncio.to_thread(self.reranker.rerank, search_query, doc_texts, top_k=5)
         yield emit("Reranking Model", "Completed", f"Filtered down to top {len(ranked_docs)} most relevant contexts")
 
         yield emit("Generation", "Processing", "Synthesizing answer using LLM and retrieved context")
@@ -869,7 +874,7 @@ Rewritten:"""
                     logger.error(f"Visualizer failed: {e}")
                     return None
                     
-            verify_task = asyncio.create_task(self.verifier.verify(answer, gen_context, model_choice=model_choice))
+            verify_task = asyncio.create_task(self.verifier.verify_fast(answer, gen_context, model_choice=model_choice))
             visualize_task = asyncio.create_task(safe_visualize())
             
             is_valid_data, current_chart_filename = await asyncio.gather(verify_task, visualize_task)

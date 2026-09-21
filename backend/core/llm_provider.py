@@ -45,7 +45,15 @@ class DualLLM:
         # question. qwen2.5:3b supports 32k; 8192 fits the search context with ~150 MB
         # of extra KV cache. Override with OLLAMA_NUM_CTX if VRAM is tight.
         num_ctx = int(os.getenv("OLLAMA_NUM_CTX", "8192"))
-        self.llama_llm = Ollama(model=self.llama_model, base_url=base_url, num_ctx=num_ctx)
+        # keep_alive: Ollama unloads the model after 5 idle minutes and the next request
+        # pays ~9 s to reload it. 30 minutes keeps it warm through a working session and
+        # still frees the GPU when the machine is genuinely idle. num_predict bounds a
+        # runaway answer; 512 tokens is ~350 words, more than any template asks for.
+        self.llama_llm = Ollama(
+            model=self.llama_model, base_url=base_url, num_ctx=num_ctx,
+            keep_alive=os.getenv("OLLAMA_KEEP_ALIVE", "30m"),
+            num_predict=int(os.getenv("OLLAMA_NUM_PREDICT", "512")),
+        )
 
         # Initialize Gemini if key exists and is not a placeholder
         self.gemini_llm = None

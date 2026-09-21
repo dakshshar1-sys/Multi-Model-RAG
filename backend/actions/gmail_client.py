@@ -49,11 +49,18 @@ class GmailClient:
             return False
         if not (self._init_error or "").startswith("Gmail init failed"):
             return False  # not authorized / invalid token: retrying cannot help
+        if self._attempts <= 1:
+            # The only attempt so far was in the constructor, i.e. during container
+            # bring-up, when the network is routinely not ready yet ("Network is
+            # unreachable"). The first real request retries immediately; the cooldown
+            # applies from the second failure on.
+            return True
         return (time.monotonic() - self._last_attempt) >= self.RETRY_COOLDOWN_S
 
     def _connect(self):
         import time
         self._last_attempt = time.monotonic()
+        self._attempts = getattr(self, "_attempts", 0) + 1
         if not os.path.exists(self.token_path):
             self._init_error = (
                 "Gmail is not authorized yet. Run: python -m actions.authorize"

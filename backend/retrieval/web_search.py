@@ -656,7 +656,7 @@ async def _fetch_and_extract(url: str) -> str:
     return ""
 
 
-def merge_search_results(per_query: list[tuple[list[str], list[str]]], max_total_chars: int = 22000) -> tuple[list[str], list[str]]:
+def merge_search_results(per_query: list[tuple[list[str], list[str]]], max_total_chars: int = 16000) -> tuple[list[str], list[str]]:
     """
     Combine (docs, sources) from several parallel searches into one context:
     drop repeat URLs (the same press release surfaces for every query variant),

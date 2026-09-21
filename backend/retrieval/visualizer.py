@@ -102,7 +102,15 @@ Python Code:"""
         Supports self-healing if local LLM code execution fails.
         """
         full_context = "\n".join(context)
-        
+
+        # 0. Cheap gate: a chart needs at least three numbers in the answer. Most prose
+        #    answers have none, and the detection prompt costs a model call over the
+        #    whole context every time.
+        from core.text_support import count_numbers
+        if count_numbers(answer) < 3:
+            logger.info("VisualizerAgent: fewer than 3 numbers in the answer; skipping detection.")
+            return None
+
         # 1. Detection
         raw_detect = self.llm.invoke(
             self.detect_prompt.format(context=full_context, answer=answer),

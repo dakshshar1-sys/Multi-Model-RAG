@@ -1,6 +1,10 @@
 """
 Tests for the router's deterministic fast-path.
 
+Since 2026-09-21 the fast path also routes other unmistakable intents (sends, inbox
+reads, own-document questions, inline charts, greetings, fragments); the invariant
+these tests guard is unchanged: a non-file request must never become a file write.
+
 The 3B local classifier occasionally misrouted an unmistakable "make a file/folder"
 request to a messaging tool (a folder+file prompt once produced a WhatsApp draft). The
 fast-path decides those clear cases with regex before the LLM. These tests pin that it
@@ -40,7 +44,7 @@ def test_fast_path_forces_workspace_for_file_requests(query):
 ])
 def test_fast_path_never_hijacks_a_send(query):
     # Any messaging cue backs off to the LLM, so genuine sends still route to messaging.
-    assert AgentRouter._fast_route(query) is None
+    assert AgentRouter._fast_route(query) != "Workspace_Task"
 
 
 @pytest.mark.parametrize("query", [
@@ -50,4 +54,4 @@ def test_fast_path_never_hijacks_a_send(query):
     "who won the match yesterday",
 ])
 def test_fast_path_stays_out_of_non_file_queries(query):
-    assert AgentRouter._fast_route(query) is None
+    assert AgentRouter._fast_route(query) != "Workspace_Task"

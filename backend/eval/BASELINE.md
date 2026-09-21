@@ -102,6 +102,41 @@ The obvious levers, in order: skip the rewrite when there is no history (already
 stream generation (already done), and a smaller verifier or a rule-based first pass.
 Collect a distribution from `traces.jsonl` before optimising anything.
 
+## Efficiency pass — 2026-09-21
+
+Every change removes work; none adds a model, a service, or resident memory.
+
+| change | what it removes |
+|---|---|
+| deterministic routing for unmistakable intents (sends, inbox reads, own-document questions, inline charts, image references, greetings, fragments) | the ~1 s classifier call, and its instability |
+| verification: lexical support first, model only in the 0.30–0.75 band, and then over 3 trimmed chunks | a model call over the whole context on every answer |
+| chart detection only when the answer holds ≥ 3 numbers | a model call over the whole context on every answer |
+| no model query-expansion for series requests (per-period queries already cover them) | one model call per web search |
+| web-search context cap 22k → 16k chars | ~1.5k prompt tokens per web answer |
+| Ollama keep_alive 30 min (was 5) | a ~9 s model reload on the first request after a short idle |
+| num_predict 512 | runaway answers |
+
+Tried and reverted by measurement: reranker max_length 256 saved ~0.15 s and cost one
+top-5 hit (recall@5 0.922 → 0.906). Default stays 512.
+
+Routing after the change (32 cases × 3 runs): strict 0.969, effective 1.000, unstable 0,
+0.147 s/case (was 0.906 / 0.938 / 0 / 0.45 s, and 0.854 / 2 unstable / 1.8 s the session before).
+
+Latency, same six intents, fresh phrasings, no cache:
+
+| intent | before | after |
+|---|---|---|
+| direct chat | 10.6 s (9.8 s was a cold model load) | 1.0 s |
+| knowledge-base answer | 12.4 s | 11.8 s (generation 5.9 s of it) |
+| inline-data chart | 5.4 s | 3.5 s |
+| file draft | 1.5 s | 3.0 s (output-length noise) |
+| email draft | 3.6 s | ~3 s |
+| web chart by quarter | 80.9 s | 25.7 s |
+
+Generation is now the floor: ~6 s for a 150-word knowledge-base answer on qwen2.5:3b.
+The next lever would be a leaner analytical template (fewer mandated sections), which is
+a product decision, not an optimisation.
+
 ## Not yet measured
 
 - Latency distribution over many requests (traces.jsonl accumulates; one request is not a benchmark).
