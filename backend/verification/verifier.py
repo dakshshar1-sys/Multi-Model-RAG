@@ -26,6 +26,29 @@ Answer:
 Verification Output:"""
         )
 
+    # Support above this: grounded, no model call. Below the lower bound: invented, no
+    # model call. Between: ask the model. Measured on the evaluation set the proxy is
+    # decisive at the extremes; the 3B judge is lenient and slow (it re-reads every
+    # source chunk), so it is spent only where it can change the verdict.
+    SUPPORT_PASS = 0.75
+    SUPPORT_FAIL = 0.30
+    JUDGE_CHUNKS = 3
+    JUDGE_CHUNK_CHARS = 1500
+
+    async def verify_fast(self, answer: str, context: list[str], model_choice: str = "auto") -> tuple[bool, str]:
+        """verify() with a model-free first pass. Same return shape."""
+        from core.text_support import lexical_support
+        if not context:
+            return False, "No context provided for verification."
+        support = lexical_support(answer, context)
+        if support >= self.SUPPORT_PASS:
+            return True, f"Answer sentences are supported by the sources (lexical support {support:.2f})."
+        if support <= self.SUPPORT_FAIL:
+            return False, f"Most answer sentences use words absent from the sources (lexical support {support:.2f})."
+        trimmed = [c[: self.JUDGE_CHUNK_CHARS] for c in context[: self.JUDGE_CHUNKS]]
+        ok, reason = await self.verify(answer, trimmed, model_choice=model_choice)
+        return ok, f"{reason} (lexical support {support:.2f}; model consulted)"
+
     async def verify(self, answer: str, context: list[str], model_choice: str = "auto") -> tuple[bool, str]:
         if not context:
             return False, "No context provided for verification."

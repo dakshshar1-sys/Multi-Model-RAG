@@ -1,3 +1,11 @@
+# CPU-only PyTorch. The backend container has no GPU passthrough (torch.cuda.is_available()
+# is False inside it), yet an unpinned `torch` resolves to the CUDA build: ~3 GB of wheels
+# per rebuild, an 18-minute build, and on 2026-09-20 a full root disk. The CPU wheels are
+# the same versions, ~10x smaller. Host Ollama, not this container, uses the GPU.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.14.0+cpu
+torchvision==0.29.0+cpu
+
 fastapi==0.110.0
 uvicorn==0.29.0
 pydantic==2.6.4
@@ -10,6 +18,7 @@ langchain-text-splitters==0.0.1
 faiss-cpu==1.8.0
 python-dotenv==1.0.1
 pypdf==4.1.0
+pypdfium2==5.13.0   # renders PDF pages for OCR of scanned documents (self-contained, no apt)
 beautifulsoup4==4.12.3
 requests==2.31.0
 duckduckgo-search==6.3.7

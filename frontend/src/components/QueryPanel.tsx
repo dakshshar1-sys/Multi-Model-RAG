@@ -5,7 +5,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import ImageViewer from "@/components/ImageViewer";
 import { DocumentIcon, GlobeIcon, ImageIcon, MicIcon, SendIcon, CloseIcon, WarningIcon, CheckIcon, ChatIcon, StopIcon } from "@/components/icons";
-import type { Message, PipelineStage } from "@/lib/conversations";
+import type { Message, PendingAction, PipelineStage } from "@/lib/conversations";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
@@ -19,6 +19,15 @@ interface QueryPanelProps {
   conversationId: string | null;
 }
 
+// Timings ride on the stage events: a Completed stage carries its own duration (ms);
+// the final response carries elapsed time since the request began (t_ms) = the total.
+const stageTiming = (stage: PipelineStage): string | null => {
+  if (stage.status !== "Completed") return null;
+  if (stage.model === "Final Response" && stage.t_ms != null) return `${(stage.t_ms / 1000).toFixed(1)}s total`;
+  if (stage.ms != null && stage.ms >= 100) return `${(stage.ms / 1000).toFixed(1)}s`;
+  return null;
+};
+
 // Moving StageDisplay outside the component to prevent re-creation on every render
 const StageDisplay = ({ stages }: { stages: PipelineStage[] }) => (
   <div className="flex flex-col gap-2 p-4 bg-cream-100 border border-cream-300 rounded-3xl mt-4 max-w-[500px]">
@@ -31,10 +40,62 @@ const StageDisplay = ({ stages }: { stages: PipelineStage[] }) => (
         }`} />
         <span className="text-ink font-semibold min-w-[140px] text-xs">{stage.model}</span>
         <span className="truncate opacity-70 italic">{stage.action}</span>
+        {stageTiming(stage) && (
+          <span className="ml-auto shrink-0 tabular-nums text-[10px] text-stone-400">{stageTiming(stage)}</span>
+        )}
       </div>
     ))}
   </div>
 );
+
+// ─── Pending-action classification ───────────────────────────────────────
+// Decide how to render a draft by what it *is*, not by falling through an if/else
+// chain. A file draft carries {path, content}; a message draft carries a recipient.
+// Anything else renders as a generic action so a new backend kind can never be
+// mistaken for (and labelled as) a WhatsApp message.
+const MESSAGE_KINDS = new Set(["email", "telegram", "whatsapp"]);
+const DRAFT_LABELS: Record<string, string> = {
+  email: "Draft email · not sent",
+  telegram: "Draft Telegram · not sent",
+  whatsapp: "Draft WhatsApp · not sent",
+  file: "Draft file · not saved",
+};
+const isFileDraft = (a: PendingAction) => a.kind === "file" || typeof a.payload?.path === "string";
+const isMessageDraft = (a: PendingAction) => !isFileDraft(a) && MESSAGE_KINDS.has(a.kind);
+const draftLabel = (a: PendingAction) =>
+  isFileDraft(a) ? DRAFT_LABELS.file : DRAFT_LABELS[a.kind] ?? `Draft ${a.kind} · awaiting approval`;
+
+// The ingest response reports how each PDF page was read. Scanned pages (no usable
+// text layer) are OCR'd; say so, with the text-quality score before and after, so
+// the user can see the recovery rather than just a chunk count.
+type IngestResult = {
+  chunks: number;
+  replaced_chunks?: number;
+  extraction?: {
+    pages: number;
+    ocr_pages: number;
+    ocr_failed_pages: number;
+    text_quality_before: number | null;
+    text_quality_after: number | null;
+  };
+};
+function describeExtraction(r: IngestResult): string {
+  const parts: string[] = [];
+  const ex = r.extraction;
+  if (ex && ex.ocr_pages > 0) {
+    const q = ex.text_quality_before != null && ex.text_quality_after != null
+      ? ` — text quality ${ex.text_quality_before.toFixed(2)} → ${ex.text_quality_after.toFixed(2)}`
+      : "";
+    parts.push(`OCR recovered ${ex.ocr_pages} of ${ex.pages} scanned page${ex.pages === 1 ? "" : "s"}${q}`);
+  }
+  if (ex && ex.ocr_failed_pages > 0) {
+    parts.push(`${ex.ocr_failed_pages} page${ex.ocr_failed_pages === 1 ? "" : "s"} could not be OCR'd and kept the original text`);
+  }
+  if (r.replaced_chunks && r.replaced_chunks > 0) {
+    parts.push(`replaced ${r.replaced_chunks} earlier chunk${r.replaced_chunks === 1 ? "" : "s"} of this file`);
+  }
+  return parts.length ? ` ${parts.join("; ")}.` : "";
+}
 
 export default function QueryPanel({ messages, setMessages, conversationId }: QueryPanelProps) {
   const [hasMounted, setHasMounted] = useState(false);
@@ -109,10 +170,31 @@ export default function QueryPanel({ messages, setMessages, conversationId }: Qu
 
   useEffect(scrollToBottom, [messages, liveStages]);
 
+  const appendSystemMessage = useCallback((content: string) => {
+    setMessages((prev) => [...prev, {
+      id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      role: "system",
+      content,
+      timestamp: new Date(),
+    }]);
+  }, [setMessages]);
+
   // ─── Voice Input Logic ───────────────────────────────────────────
   const toggleVoiceInput = useCallback(() => {
-    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-      alert("Voice input is not supported in this browser. Please use Chrome.");
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      appendSystemMessage("Voice input isn't supported in this browser — Chrome or Edge works best.");
+      return;
+    }
+
+    // The Web Speech API only runs in a secure context (https:// or localhost). Over a
+    // plain-http LAN address (e.g. http://192.168.x.x:3000) the browser blocks the mic and
+    // the recorder aborts the instant it starts — which looks exactly like "record → cancel".
+    if (!window.isSecureContext) {
+      appendSystemMessage(
+        "Voice input needs a secure context. Open the app at http://localhost:3000 " +
+        "(not an http:// IP address), or serve it over https."
+      );
       return;
     }
 
@@ -122,7 +204,6 @@ export default function QueryPanel({ messages, setMessages, conversationId }: Qu
       return;
     }
 
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     const recognition = new SpeechRecognition();
     recognition.continuous = false;
     recognition.interimResults = true;
@@ -140,24 +221,37 @@ export default function QueryPanel({ messages, setMessages, conversationId }: Qu
       setIsListening(false);
     };
 
+    // Surface WHY it stopped instead of failing silently. Chrome's recognition streams
+    // audio to Google's servers, so the most common failure on this offline-first project
+    // is "network" — it simply can't transcribe without an internet connection.
     recognition.onerror = (event: any) => {
-      console.error("Speech recognition error:", event.error);
       setIsListening(false);
+      const reasons: Record<string, string> = {
+        "network":
+          "Voice input couldn't reach the speech service. Chrome's built-in recognition " +
+          "needs an internet connection — it can't transcribe fully offline.",
+        "not-allowed":
+          "Microphone access is blocked. Allow the mic for this site via the address-bar " +
+          "permission icon, then try again.",
+        "service-not-allowed":
+          "The browser blocked the speech service (usually an insecure origin or a privacy " +
+          "setting). Use http://localhost:3000 or serve over https.",
+        "no-speech": "I didn't hear anything — try again and speak once the mic turns red.",
+        "audio-capture": "No microphone was found. Check that one is connected and enabled.",
+        "aborted": "Voice input was cancelled.",
+      };
+      appendSystemMessage(reasons[event.error] || `Voice input error: ${event.error}`);
     };
 
     recognitionRef.current = recognition;
-    recognition.start();
-    setIsListening(true);
-  }, [isListening]);
-
-  const appendSystemMessage = useCallback((content: string) => {
-    setMessages((prev) => [...prev, {
-      id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-      role: "system",
-      content,
-      timestamp: new Date(),
-    }]);
-  }, [setMessages]);
+    try {
+      recognition.start();
+      setIsListening(true);
+    } catch (e: any) {
+      setIsListening(false);
+      appendSystemMessage(`Couldn't start voice input: ${e?.message || e}`);
+    }
+  }, [isListening, appendSystemMessage]);
 
   // ─── Stop an in-flight request ───────────────────────────────────────
   const stopProcessing = useCallback(() => {
@@ -387,10 +481,10 @@ export default function QueryPanel({ messages, setMessages, conversationId }: Qu
         const result = await ingestDocument(file);
         setLiveStages((prev) => prev.map((stage) =>
           stage.model === "Document Ingestion"
-            ? { ...stage, status: "Completed", action: `Ingested ${result.chunks} chunks from ${file.name}` }
+            ? { ...stage, status: "Completed", action: `Ingested ${result.chunks} chunks from ${file.name}${describeExtraction(result)}` }
             : stage
         ));
-        appendSystemMessage(`Document ingested: ${file.name} (${result.chunks} chunks).`);
+        appendSystemMessage(`Document ingested: ${file.name} (${result.chunks} chunks).${describeExtraction(result)}`);
       }
 
       for (const url of urlSnapshot) {
@@ -427,6 +521,7 @@ export default function QueryPanel({ messages, setMessages, conversationId }: Qu
       formData.append("query", effectiveQuery);
       formData.append("history", formatHistory());
       formData.append("model_choice", modelChoice);
+      formData.append("conversation_id", conversationId ?? "");
       imageFiles.forEach((file) => {
         formData.append("images", file);
       });
@@ -478,9 +573,10 @@ export default function QueryPanel({ messages, setMessages, conversationId }: Qu
         setLiveStages([]);
       });
     } else {
-      // Text-only: use EventSource (GET)
+      // Text-only: use EventSource (GET). The `_` cache-buster guarantees the browser
+      // never replays a previously cached stream for an identical query+history.
       const eventSource = new EventSource(
-        `${API_BASE}/api/stream?query=${encodeURIComponent(effectiveQuery)}&history=${encodeURIComponent(formatHistory())}&model_choice=${encodeURIComponent(modelChoice)}`
+        `${API_BASE}/api/stream?query=${encodeURIComponent(effectiveQuery)}&history=${encodeURIComponent(formatHistory())}&model_choice=${encodeURIComponent(modelChoice)}&conversation_id=${encodeURIComponent(conversationId ?? "")}&_=${Date.now()}`
       );
       eventSourceRef.current = eventSource;
 
@@ -784,23 +880,17 @@ export default function QueryPanel({ messages, setMessages, conversationId }: Qu
                 {msg.pendingAction && (
                   <div className="mt-5 rounded-2xl border-2 border-brass-300 bg-brass-50/60 overflow-hidden">
                     <div className="flex items-center gap-2 px-5 py-3 bg-brass-100/70 border-b border-brass-200">
-                      {msg.pendingAction.kind === "email" || msg.pendingAction.kind === "file" ? (
+                      {isFileDraft(msg.pendingAction) || msg.pendingAction.kind === "email" ? (
                         <DocumentIcon className="w-4 h-4 text-brass-700" />
                       ) : (
                         <ChatIcon className="w-4 h-4 text-brass-700" />
                       )}
                       <span className="text-[11px] font-semibold uppercase tracking-widest text-brass-800">
-                        {msg.pendingAction.kind === "email"
-                          ? "Draft email · not sent"
-                          : msg.pendingAction.kind === "telegram"
-                          ? "Draft Telegram · not sent"
-                          : msg.pendingAction.kind === "file"
-                          ? "Draft file · not saved"
-                          : "Draft WhatsApp · not sent"}
+                        {draftLabel(msg.pendingAction)}
                       </span>
                     </div>
 
-                    {msg.pendingAction.kind === "file" ? (
+                    {isFileDraft(msg.pendingAction) ? (
                       <div className="px-5 py-4 space-y-2.5">
                         <div className="flex items-center gap-2 text-[13px]">
                           <span className="font-semibold text-stone-500">File</span>
@@ -812,7 +902,7 @@ export default function QueryPanel({ messages, setMessages, conversationId }: Qu
                           {msg.pendingAction.payload.content}
                         </pre>
                       </div>
-                    ) : (
+                    ) : isMessageDraft(msg.pendingAction) ? (
                       <div className="px-5 py-4 space-y-2.5">
                         <div className="flex gap-3 text-[13px]">
                           <span className="w-16 flex-shrink-0 font-semibold text-stone-500">To</span>
@@ -836,6 +926,14 @@ export default function QueryPanel({ messages, setMessages, conversationId }: Qu
                           </span>
                         </div>
                       </div>
+                    ) : (
+                      // Unknown action kind (e.g. a newer backend than this build). Show the raw
+                      // payload rather than dressing it up as a message it isn't.
+                      <div className="px-5 py-4">
+                        <pre className="max-h-[320px] overflow-auto rounded-xl bg-cream-100 border border-cream-300 p-3.5 text-[12px] leading-relaxed font-mono text-ink whitespace-pre">
+                          {JSON.stringify(msg.pendingAction.payload, null, 2)}
+                        </pre>
+                      </div>
                     )}
 
                     <div className="flex items-center gap-3 px-5 py-3 bg-white/60 border-t border-brass-200">
@@ -845,8 +943,8 @@ export default function QueryPanel({ messages, setMessages, conversationId }: Qu
                         className="btn-premium !py-2 !px-5 !text-[13px] rounded-xl"
                       >
                         {resolvingAction === msg.pendingAction.id
-                          ? (msg.pendingAction.kind === "file" ? "Saving…" : "Sending…")
-                          : (msg.pendingAction.kind === "file" ? "Approve & save" : "Approve & send")}
+                          ? (isFileDraft(msg.pendingAction) ? "Saving…" : "Sending…")
+                          : (isFileDraft(msg.pendingAction) ? "Approve & save" : isMessageDraft(msg.pendingAction) ? "Approve & send" : "Approve")}
                       </button>
                       <button
                         onClick={() => resolveAction(msg.id, msg.pendingAction!.id, false)}
@@ -856,7 +954,7 @@ export default function QueryPanel({ messages, setMessages, conversationId }: Qu
                         Reject
                       </button>
                       <span className="ml-auto text-[10px] text-stone-500 italic">
-                        {msg.pendingAction.kind === "file" ? "Nothing is written until you approve" : "Nothing is sent until you approve"}
+                        {isFileDraft(msg.pendingAction) ? "Nothing is written until you approve" : "Nothing happens until you approve"}
                       </span>
                     </div>
                   </div>

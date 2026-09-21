@@ -54,10 +54,49 @@ async def ingest_document(file: UploadFile = File(...)):
     documents = await doc_parser.parse_upload_file(file)
     for doc in documents:
         doc.metadata["source"] = file.filename
-        
+
+    # Re-uploading a file replaces its previous chunks (otherwise a fixed extraction
+    # would sit in the index next to the old garbage).
+    replaced = orchestrator.vector_db.delete_by_source(file.filename)
     orchestrator.vector_db.add_documents(documents)
-    
-    return {"filename": file.filename, "status": "Ingested successfully", "chunks": len(documents)}
+
+    out = {"filename": file.filename, "status": "Ingested successfully", "chunks": len(documents),
+           "replaced_chunks": replaced}
+    report = getattr(doc_parser, "last_report", None)
+    if report is not None:
+        out["extraction"] = report.as_dict()
+    return out
+
+@router.get("/documents")
+def list_documents():
+    """Sources currently in the knowledge base, with chunk counts and how they were extracted."""
+    vs = orchestrator.vector_db.vector_store
+    counts: dict[str, dict] = {}
+    if vs:
+        for doc_id in vs.index_to_docstore_id.values():
+            meta = (vs.docstore.search(doc_id).metadata or {})
+            src = meta.get("source") or "?"
+            entry = counts.setdefault(src, {"chunks": 0, "ocr_chunks": 0})
+            entry["chunks"] += 1
+            if meta.get("extraction") == "ocr":
+                entry["ocr_chunks"] += 1
+    return {"documents": [{"source": k, **v} for k, v in sorted(counts.items())]}
+
+
+@router.get("/traces")
+def recent_traces(limit: int = 50):
+    """The last N request traces: per-stage timings, tool, cache/degraded flags, totals."""
+    return {"traces": orchestrator.trace_log.tail(max(1, min(limit, 500)))}
+
+
+@router.delete("/documents/{source}")
+def delete_document(source: str):
+    """Remove every chunk of one source from the knowledge base."""
+    removed = orchestrator.vector_db.delete_by_source(source)
+    if removed == 0:
+        raise HTTPException(status_code=404, detail=f"No chunks found for source '{source}'")
+    return {"source": source, "removed_chunks": removed}
+
 
 @router.post("/crawl")
 async def crawl_website(request: CrawlRequest):
@@ -285,14 +324,14 @@ def workspace_files():
     return {"dir": orchestrator.workspace.workspace_dir, "files": orchestrator.workspace.list_files()}
 
 @router.get("/stream")
-async def pipeline_stream(query: str, history: str = "", model_choice: str = "auto", request: Request = None):
+async def pipeline_stream(query: str, history: str = "", model_choice: str = "auto", conversation_id: str = "", request: Request = None):
     """
     Server-Sent Events endpoint to stream pipeline status to the frontend.
     Text-only queries. Accepts model_choice: 'auto', 'local', or 'api'.
     """
     async def event_generator():
         try:
-            async for event in orchestrator.process_query_stream(query, history, model_choice=model_choice):
+            async for event in orchestrator.process_query_stream(query, history, model_choice=model_choice, conversation_id=conversation_id):
                 if request and await request.is_disconnected():
                     break
                 yield event
@@ -308,6 +347,7 @@ async def pipeline_stream_with_image(
     query: str = Form(...),
     history: str = Form(""),
     model_choice: str = Form("auto"),
+    conversation_id: str = Form(""),
     images: list[UploadFile] = File(default=[]),
 ):
     """
@@ -347,7 +387,7 @@ async def pipeline_stream_with_image(
                     "action": f"Extracted visual data from {len(img_paths)} uploaded image(s)"
                 })
             
-            async for event in orchestrator.process_query_stream(query, history, image_context=image_context, model_choice=model_choice):
+            async for event in orchestrator.process_query_stream(query, history, image_context=image_context, model_choice=model_choice, conversation_id=conversation_id):
                 if await request.is_disconnected():
                     break
                 yield event

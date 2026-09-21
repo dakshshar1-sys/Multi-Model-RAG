@@ -15,6 +15,7 @@ class DocumentParser:
     This class currently supports PDF, TXT, and Markdown files.
     """
     def __init__(self, chunk_size=1000, chunk_overlap=200):
+        self.last_report = None          # ExtractionReport of the most recent PDF parse
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
         self.text_splitter = RecursiveCharacterTextSplitter(
@@ -39,10 +40,24 @@ class DocumentParser:
             temp_file_path = temp_file.name
 
         documents = []
+        self.last_report = None
         try:
             if ext == ".pdf":
                 loader = PyPDFLoader(temp_file_path)
-                documents = loader.load()
+                pages = loader.load()
+                # Score each page's text layer; OCR the pages whose layer is absent or
+                # garbage (scanner-app OCR, image-only scans). See ingestion/pdf_ocr.py.
+                from ingestion.pdf_ocr import extract_pages
+                results, report = extract_pages(content, [d.page_content for d in pages])
+                self.last_report = report
+                for doc, res in zip(pages, results):
+                    doc.page_content = res.text
+                    doc.metadata["page"] = res.index + 1
+                    doc.metadata["extraction"] = res.extraction
+                documents = [d for d in pages if d.page_content.strip()]
+                if report.ocr_pages:
+                    logger.info(f"DocumentParser: OCR'd {report.ocr_pages}/{report.pages} pages of "
+                                f"'{file.filename}' (quality {report.mean_ratio_before} -> {report.mean_ratio_after})")
             elif ext in [".txt", ".md"]:
                 loader = TextLoader(temp_file_path)
                 documents = loader.load()

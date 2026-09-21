@@ -1,9 +1,72 @@
 import logging
 import os
+import re
 import shutil
 import subprocess
 
 logger = logging.getLogger(__name__)
+
+
+# Words that mean "change what is already there" rather than "make something new".
+_EDIT_INTENT_RE = re.compile(
+    r"\b(edit|update|modify|change|replace|remove|delete|rename|append|add to|fix|"
+    r"rewrite|revise|amend|clear|empty|overwrite)\b|\bremoving\b|\breplacing\b",
+    re.I,
+)
+
+
+def _stem_key(name: str) -> str:
+    """Normalise a filename for near-match comparison: lowercase, drop non-alphanumerics,
+    and drop a trailing plural 's'. So name.txt, names.txt and Name.TXT all collapse
+    together, while name.txt and notes.txt do not."""
+    stem, ext = os.path.splitext(name)
+    stem = re.sub(r"[^a-z0-9]", "", stem.lower())
+    if len(stem) > 3 and stem.endswith("s"):
+        stem = stem[:-1]
+    return f"{stem}{ext.lower()}"
+
+
+def resolve_existing_target(requested: str, existing: list[str], query: str = "") -> str:
+    """
+    Map the model's requested path onto a file that already exists, when the user
+    clearly meant that file.
+
+    A small model asked to "add names to the txt folder, removing the older ones"
+    reliably invents txt/names.txt next to the real txt/name.txt, so the edit lands
+    in a brand-new file and the old content survives. Matching by hand is not
+    something a 3B model does dependably, so it is decided here instead:
+
+      - exact hit wins;
+      - otherwise, only when the instruction actually implies editing, look in the
+        same directory for a singular/plural or punctuation variant of the name;
+      - failing that, if the named directory holds exactly one file, that is the
+        file the user meant.
+
+    Anything else returns `requested` unchanged, so "write a new script" still
+    creates a new file.
+    """
+    requested = (requested or "").strip()
+    if not requested or not existing:
+        return requested
+    norm = {f.replace("\\", "/"): f for f in existing}
+    req = requested.replace("\\", "/")
+    if req in norm:
+        return norm[req]
+    if not _EDIT_INTENT_RE.search(query or ""):
+        return requested
+
+    req_dir = os.path.dirname(req)
+    req_key = _stem_key(os.path.basename(req))
+    siblings = [f for f in norm if os.path.dirname(f) == req_dir]
+
+    for f in siblings:
+        if _stem_key(os.path.basename(f)) == req_key:
+            logger.info(f"Resolved '{requested}' to the existing '{f}' (near-match in the same folder).")
+            return f
+    if len(siblings) == 1:
+        logger.info(f"Resolved '{requested}' to the only file in '{req_dir or '.'}': '{siblings[0]}'.")
+        return siblings[0]
+    return requested
 
 
 class WorkspaceAgent:
@@ -48,7 +111,19 @@ class WorkspaceAgent:
         """
         if not rel_path or not rel_path.strip():
             raise ValueError("No filename given.")
-        raw = rel_path.strip()
+        raw = rel_path.strip().replace("\\", "/")
+        # A model told "write into praxis-workspace/txt/" often repeats the workspace
+        # folder in the path it emits, which would nest a second copy inside the real
+        # one (praxis-workspace/praxis-workspace/txt/...). The workspace root is implied
+        # by this agent, so strip a redundant leading copy of its own name.
+        ws_name = os.path.basename(self.workspace_dir)
+        while True:
+            head, _, tail = raw.partition("/")
+            if head in (ws_name, ".") and tail.strip():
+                logger.info(f"Stripped redundant '{head}/' prefix from model path: {rel_path!r}")
+                raw = tail.strip()
+                continue
+            break
         # Reject absolute / home paths outright — a model emitting /etc/passwd or
         # ~/.ssh/id_rsa clearly intends to escape, so refuse rather than silently
         # rewriting it into the workspace.
@@ -81,6 +156,13 @@ class WorkspaceAgent:
             f.write(content)
         logger.info(f"Wrote {'(overwrote) ' if existed else ''}{self.rel(target)} ({len(content)} chars)")
         return {"path": self.rel(target), "abs_path": target, "overwrote": existed, "bytes": len(content)}
+
+    def exists(self, rel_path: str) -> bool:
+        """True if the path resolves to an existing file inside the workspace."""
+        try:
+            return os.path.isfile(self._safe_path(rel_path))
+        except ValueError:
+            return False
 
     def read_file(self, rel_path: str) -> str:
         if not self.available:

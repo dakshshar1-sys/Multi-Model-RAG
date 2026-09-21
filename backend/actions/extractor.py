@@ -110,15 +110,53 @@ The user has asked you to create/write a file, and may have described a problem 
 Produce the complete file. If they described a task, fully solve it in correct, working code.
 
 Output EXACTLY this format and nothing else:
-FILENAME: <relative filename with extension, e.g. solve.py or src/app.js>
+FILENAME: <relative path with extension, e.g. solve.py or src/app.js>
 CONTENT:
 <the complete raw file body>
 
 Rules:
 - FILENAME is a plain relative path (no leading slash, no ".."). If the user gave a name, use it; otherwise pick a sensible one.
+- IF the user asks for the file to be INSIDE a folder (e.g. "make a folder named pythoncode and in it a file random.py"), put the folder in the path: FILENAME: pythoncode/random.py. The folder is created automatically. Support nested folders too (e.g. a/b/c.py).
+- Write COMPLETE, RUNNABLE code. If it's a script, make it actually do the thing when run — e.g. under `if __name__ == "__main__":` call the function and print the result, so running the file produces visible output.
 - CONTENT is the raw file content only. Do NOT wrap it in markdown fences. Do NOT add any explanation before or after.
-
+- Never repeat the workspace folder name in FILENAME. Paths are already relative to it: write "txt/names.txt", not "praxis-workspace/txt/names.txt".
+- If the user is talking about a file that ALREADY EXISTS (see the list below), reuse that exact path character for character, including whether the name is singular or plural. Do not invent a near-miss name.
+{existing}
 User instruction: "{query}"
+"""
+
+
+# Editing an existing file is a different job from writing a new one: the model must be
+# shown the current bytes, or "remove the old names and add these" silently becomes
+# "write a brand new file", losing whatever was there. The whole updated file is
+# returned (not a diff) because small local models do not produce reliable patches.
+FILE_REVISE_PROMPT = """You rewrite files. Output the new contents of the file. Nothing else.
+
+--- EXAMPLE (do not copy these words into your answer) ---
+File: fruit.txt
+--- CURRENT CONTENT ---
+apple
+banana
+--- END CURRENT CONTENT ---
+Instruction: "add cherry and date, remove the older fruits"
+UPDATED CONTENT:
+cherry
+date
+--- END EXAMPLE ---
+
+NOW DO THE SAME FOR THIS FILE
+File: {path}
+--- CURRENT CONTENT ---
+{current}
+--- END CURRENT CONTENT ---
+Instruction: "{query}"
+
+Rules:
+- Output the complete new file, ready to save. No diff, no explanation, no markdown fences.
+- If the instruction says to remove, replace, or clear something, it must NOT appear in your output.
+- Keep anything the instruction does not mention.
+
+UPDATED CONTENT:
 """
 
 
@@ -141,6 +179,8 @@ def _parse_file_task(raw: str) -> dict:
     filename = filename.lstrip("/\\")
     if not filename:
         raise ValueError("Model did not produce a usable filename.")
+    if content.strip():
+        content = content.rstrip("\n") + "\n"   # match the edit path's hygiene
     return {"path": filename, "content": content}
 
 
@@ -261,12 +301,40 @@ class ActionExtractor:
             "body": body,
         }
 
-    def extract_file_task(self, query: str, model_choice: str = "auto") -> dict:
+    def extract_file_task(self, query: str, model_choice: str = "auto", existing_files: list[str] = None) -> dict:
         """
         Turn a "write/create/save a file" instruction into {path, content}. For a coding
         task the model writes the actual solution. The path is validated again by the
         WorkspaceAgent before anything is written to disk.
+
+        `existing_files` is the current workspace listing. Without it the model cannot
+        know that the user's "the txt folder" means the existing `txt/name.txt`, and it
+        invents a near-miss path instead (names.txt), silently creating a second file.
         """
-        prompt = FILE_TASK_PROMPT.format(query=query)
+        existing = ""
+        if existing_files:
+            shown = existing_files[:40]
+            existing = ("\nFiles that already exist in the workspace:\n"
+                        + "\n".join(f"- {f}" for f in shown) + "\n")
+        prompt = FILE_TASK_PROMPT.format(query=query, existing=existing)
         raw = self.llm.invoke(prompt, model_choice=model_choice)
         return _parse_file_task(raw)
+
+    def revise_file_content(self, query: str, path: str, current: str, model_choice: str = "auto") -> str:
+        """Apply an instruction to a file that already exists; returns the full new body."""
+        prompt = FILE_REVISE_PROMPT.format(path=path, current=current, query=query)
+        raw = self.llm.invoke(prompt, model_choice=model_choice)
+        body = (raw or "").strip()
+        body = re.sub(r"^```[a-zA-Z0-9_+-]*\n", "", body)
+        body = re.sub(r"\n```\s*$", "", body)
+        # Small models echo the scaffolding of the prompt back into the answer
+        # ("END UPDATED CONTENT", "--- END CURRENT CONTENT ---"). Those are never
+        # part of the file, so drop them from the tail.
+        body = re.sub(
+            r"(?:\n\s*(?:-{2,}\s*)?(?:END\s+(?:UPDATED|CURRENT)\s+CONTENT|END\s+EXAMPLE|UPDATED\s+CONTENT:)"
+            r"\s*(?:-{2,})?\s*)+$",
+            "", body, flags=re.I,
+        ).rstrip()
+        if not body.strip():
+            raise ValueError("The model returned an empty file body.")
+        return body.rstrip("\n") + "\n"   # exactly one trailing newline, as an editor would save it

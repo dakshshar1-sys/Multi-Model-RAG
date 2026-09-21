@@ -35,9 +35,32 @@ class GmailClient:
         self.service = None
         self.email_address = None
         self._init_error = None
+        self._last_attempt = 0.0
         self._connect()
 
+    # A transient failure at start-up (the token refresh needs the network, and the
+    # container can come up before it has any) used to disable Gmail until the next
+    # restart. Retry on demand instead, no more than once per cooldown.
+    RETRY_COOLDOWN_S = 60.0
+
+    def _retryable(self) -> bool:
+        import time
+        if self.service is not None:
+            return False
+        if not (self._init_error or "").startswith("Gmail init failed"):
+            return False  # not authorized / invalid token: retrying cannot help
+        if self._attempts <= 1:
+            # The only attempt so far was in the constructor, i.e. during container
+            # bring-up, when the network is routinely not ready yet ("Network is
+            # unreachable"). The first real request retries immediately; the cooldown
+            # applies from the second failure on.
+            return True
+        return (time.monotonic() - self._last_attempt) >= self.RETRY_COOLDOWN_S
+
     def _connect(self):
+        import time
+        self._last_attempt = time.monotonic()
+        self._attempts = getattr(self, "_attempts", 0) + 1
         if not os.path.exists(self.token_path):
             self._init_error = (
                 "Gmail is not authorized yet. Run: python -m actions.authorize"
@@ -64,6 +87,7 @@ class GmailClient:
             self.service = build("gmail", "v1", credentials=creds, cache_discovery=False)
             profile = self.service.users().getProfile(userId="me").execute()
             self.email_address = profile.get("emailAddress")
+            self._init_error = None
             logger.info(f"Gmail connected as {self.email_address}")
         except Exception as e:
             self._init_error = f"Gmail init failed: {e}"
@@ -72,6 +96,8 @@ class GmailClient:
 
     @property
     def available(self) -> bool:
+        if self._retryable():
+            self._connect()
         return self.service is not None
 
     def _require(self):

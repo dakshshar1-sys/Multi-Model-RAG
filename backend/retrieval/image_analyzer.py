@@ -18,7 +18,6 @@ class ImageAnalyzer:
 
     def __init__(self):
         self.llm = DualLLM()
-        self.ocr_reader = None
         self.max_image_dimension = 1024  # Max px dimension before resizing
 
     def _preprocess_image(self, image_bytes: bytes, ext: str) -> bytes:
@@ -47,15 +46,9 @@ class ImageAnalyzer:
             return image_bytes
 
     def _get_ocr_reader(self):
-        if self.ocr_reader is None:
-            try:
-                import easyocr
-                logger.info("Initializing EasyOCR reader...")
-                self.ocr_reader = easyocr.Reader(['en'], gpu=True)
-            except ImportError:
-                logger.warning("easyocr not installed, OCR will be skipped")
-                self.ocr_reader = "disabled"
-        return self.ocr_reader if self.ocr_reader != "disabled" else None
+        """The shared reader from retrieval.ocr (lazy, failure-tolerant), or None."""
+        from retrieval.ocr import get_reader
+        return get_reader()
 
     async def analyze(self, image_paths: list[str], query: str = "") -> str:
         """
